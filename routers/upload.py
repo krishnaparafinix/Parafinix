@@ -1,11 +1,11 @@
 """
 routers/upload.py — File upload endpoints.
 
-POST   /upload/pdf   → accepts PDF upload, extracts text, returns raw text
-                        Lovable then passes the text to /generate/extract
+POST   /upload/pdf  → extract text from PDF, return raw text
 """
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from middleware.auth import CurrentUser
+from services.pdf_reader import extract_text_from_pdf
 
 router = APIRouter()
 
@@ -13,14 +13,21 @@ router = APIRouter()
 @router.post("/pdf")
 async def upload_pdf(user: CurrentUser, file: UploadFile = File(...)):
     """
-    Accepts a PDF file upload.
-    Extracts the text layer (works for typed/digital PDFs).
-    Returns extracted text for the Lovable frontend to pass to /generate/extract.
-    Scanned/image PDFs will return a warning and empty text.
+    Accepts a PDF file upload and extracts its text layer.
+    Works for typed/digital PDFs. Scanned documents return a warning.
+    The Lovable frontend passes the returned text to POST /generate/extract.
     """
-    # Phase 6: text, pages, warnings = extract_text_from_pdf(await file.read())
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+
+    pdf_bytes = await file.read()
+    text, page_count, warnings = extract_text_from_pdf(pdf_bytes)
+
     return {
-        "message": "stub",
         "filename": file.filename,
-        "content_type": file.content_type,
+        "page_count": page_count,
+        "extracted_text": text,
+        "word_count": len(text.split()) if text else 0,
+        "warnings": warnings,
+        "success": bool(text.strip()),
     }
