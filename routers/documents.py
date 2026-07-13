@@ -12,6 +12,7 @@ POST /documents/factfind
 import base64
 from datetime import date
 from fastapi import APIRouter, Query
+from services.pdf_export import docx_to_pdf
 from fastapi.responses import StreamingResponse
 from middleware.auth import CurrentUser
 from models.requests import (
@@ -36,18 +37,28 @@ def _filename(client_name: str, doc_type: str) -> str:
     return f"Parafinix_{_safe_name(client_name)}_{doc_type}_{date.today().strftime('%d%b%Y')}.docx"
 
 
-def _respond(buf, filename: str, download: bool):
-    """Returns either a streaming file download or base64 JSON."""
+PDF_MIME = "application/pdf"
+
+
+def _respond(buf, filename: str, download: bool, fmt: str = "docx"):
+    """Returns DOCX or PDF as streaming download or base64 JSON."""
+    if fmt == "pdf":
+        buf = docx_to_pdf(buf)
+        filename = filename.replace(".docx", ".pdf")
+        mime = PDF_MIME
+    else:
+        mime = DOCX_MIME
+
     if download:
         return StreamingResponse(
             buf,
-            media_type=DOCX_MIME,
+            media_type=mime,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     return {
         "filename": filename,
         "base64_content": base64.b64encode(buf.getvalue()).decode("utf-8"),
-        "mime_type": DOCX_MIME,
+        "mime_type": mime,
         "content_disposition": f'attachment; filename="{filename}"',
     }
 
@@ -71,7 +82,7 @@ async def build_suitability(
         part3=body.report_part3 or "",
         part4=body.report_part4 or "",
     )
-    return _respond(buf, _filename(body.client_name, "Suitability_Report"), download)
+    return _respond(buf, _filename(body.client_name, "Suitability_Report"), download, format)
 
 
 @router.post("/compliance")
@@ -91,7 +102,7 @@ async def build_compliance(
         flags=body.flags,
         missing=body.fails,
     )
-    return _respond(buf, _filename(body.client_name, "Compliance_Review"), download)
+    return _respond(buf, _filename(body.client_name, "Compliance_Review"), download, format)
 
 
 @router.post("/factfind")
@@ -109,4 +120,4 @@ async def build_factfind(
         client_facing=body.client_facing,
     )
     doc_type = "FactFind_Client" if body.client_facing else "FactFind_Internal"
-    return _respond(buf, _filename(body.client_name, doc_type), download)
+    return _respond(buf, _filename(body.client_name, doc_type), download, format)

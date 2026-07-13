@@ -99,3 +99,54 @@ async def save_case(
     if not case:
         raise HTTPException(status_code=500, detail="Could not save case.")
     return case
+
+
+@router.get("/cases/{case_id}/compliance")
+async def get_case_compliance(case_id: str, user: CurrentUser, request: Request):
+    """
+    Returns structured compliance data for a case.
+    Parses the stored compliance_result text into structured items
+    with status, finding and required action for each of the 28 checks.
+    """
+    token = _token(request)
+    case = db.get_case(case_id, token)
+    check_text = case.get("compliance_result", "") or ""
+
+    items = []
+    for i, line in enumerate(check_text.split("\n")):
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 2:
+            status = "PASS" if "| PASS" in line else ("FAIL" if "| FAIL" in line else "FLAG" if "| FLAG" in line else "")
+            if status:
+                items.append({
+                    "number": i + 1,
+                    "item": parts[0],
+                    "status": status,
+                    "finding": parts[2] if len(parts) > 2 else "",
+                    "required_action": parts[3] if len(parts) > 3 else (
+                        "No action required." if status == "PASS" else "Address before issue."
+                    ),
+                })
+
+    passes = sum(1 for i in items if i["status"] == "PASS")
+    flags  = sum(1 for i in items if i["status"] == "FLAG")
+    fails  = sum(1 for i in items if i["status"] == "FAIL")
+    total  = len(items)
+    score  = round((passes / total) * 100) if total > 0 else 0
+
+    return {
+        "case_id": case_id,
+        "rag_rating": case.get("rag_rating", ""),
+        "passes": passes,
+        "flags": flags,
+        "fails": fails,
+        "total": total,
+        "compliance_score": score,
+        "items": items,
+        "critical_items": [i for i in items if i["status"] == "FAIL"],
+        "flag_items": [i for i in items if i["status"] == "FLAG"],
+        "pass_items": [i for i in items if i["status"] == "PASS"],
+    }

@@ -143,3 +143,49 @@ async def refresh_token(body: RefreshRequest):
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Token refresh failed.")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    access_token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest):
+    """
+    Sends a password reset email via Supabase.
+    The email contains a link that redirects to the frontend reset page
+    with an access token. Frontend calls /auth/reset-password with that token.
+    """
+    try:
+        _db().auth.reset_password_email(
+            body.email,
+            options={"redirect_to": f"{settings.SUPABASE_URL.replace('.supabase.co', '')}-reset-password"}
+        )
+    except Exception:
+        pass  # Always return 200 — don't leak whether email exists
+    return {"message": "If that email address is registered, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    """
+    Resets the user's password using the token from the reset email.
+    The frontend extracts the access_token from the URL hash and sends it here.
+    """
+    try:
+        # Set the session with the reset token
+        db = _db()
+        db.auth.set_session(body.access_token, body.access_token)
+        res = db.auth.update_user({"password": body.new_password})
+        if not res.user:
+            raise HTTPException(400, "Password reset failed.")
+        return {"message": "Password updated successfully."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"Password reset failed: {e}")
