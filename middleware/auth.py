@@ -1,24 +1,17 @@
 """
-middleware/auth.py — Supabase JWT verification for FastAPI.
+middleware/auth.py — Supabase JWT verification.
 
-Every protected route uses get_current_user() as a FastAPI dependency.
-It verifies the Supabase-issued JWT and returns the authenticated user.
-Routes never trust a client-supplied user_id — always the verified one.
-
-Usage in a router:
-    from middleware.auth import CurrentUser
-
-    @router.get("/clients")
-    async def list_clients(user: CurrentUser):
-        ...  # user.user_id is verified and safe to use
+Supabase issues HS256 tokens signed with the project JWT secret.
+This middleware verifies the token and extracts the authenticated user.
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import BaseModel
+from typing import Annotated, Optional
 from config import settings
 
-_bearer = HTTPBearer()
+_bearer = HTTPBearer(auto_error=False)
 
 
 class AuthenticatedUser(BaseModel):
@@ -27,42 +20,83 @@ class AuthenticatedUser(BaseModel):
     is_admin: bool = False
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-) -> AuthenticatedUser:
+def _decode_supabase_token(token: str) -> dict:
     """
-    Verifies the Supabase JWT from the Authorization header.
-    Returns an AuthenticatedUser on success, raises 401 on failure.
+    Decodes a Supabase JWT. Supabase always uses HS256.
+    Raises HTTPException on any failure.
     """
-    token = credentials.credentials
     try:
-        payload = jwt.decode(
+        return jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
             algorithms=["HS256"],
-            options={"verify_aud": False},  # Supabase does not set aud
+            options={"verify_aud": False},
         )
-        user_id: str = payload.get("sub")
-        email: str = payload.get("email", "")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: no user ID found.",
-            )
-        return AuthenticatedUser(
-            user_id=user_id,
-            email=email,
-            is_admin=(email == settings.ADMIN_EMAIL),
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token verification failed: {str(e)}",
+            detail="Invalid authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
-async def require_admin(user: AuthenticatedUser = Depends(get_current_user)):
-    """Dependency that also checks the user is the admin account."""
+def _extract_token(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials],
+) -> str:
+    """Extracts the Bearer token from the request."""
+    # From HTTPBearer dependency
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    # Direct header fallback
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:]
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide Authorization: Bearer <token>",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _build_user(payload: dict) -> AuthenticatedUser:
+    """Builds an AuthenticatedUser from a decoded JWT payload."""
+    user_id = payload.get("sub", "")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: missing user ID.",
+        )
+    # Supabase puts email at top level or inside user_metadata
+    email = (
+        payload.get("email")
+        or payload.get("user_metadata", {}).get("email", "")
+    )
+    return AuthenticatedUser(
+        user_id=user_id,
+        email=email or "",
+        is_admin=(email == settings.ADMIN_EMAIL if email else False),
+    )
+
+
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> AuthenticatedUser:
+    token = _extract_token(request, credentials)
+    payload = _decode_supabase_token(token)
+    return _build_user(payload)
+
+
+async def require_admin(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> AuthenticatedUser:
     if not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -71,7 +105,5 @@ async def require_admin(user: AuthenticatedUser = Depends(get_current_user)):
     return user
 
 
-# Annotated shorthand for use in router signatures
-from typing import Annotated
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 AdminUser   = Annotated[AuthenticatedUser, Depends(require_admin)]

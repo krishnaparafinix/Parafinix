@@ -1,40 +1,44 @@
 """
-main.py — Parafinix AI FastAPI backend entry point.
-
-Registers all routers, configures CORS for the Lovable React frontend,
-and exposes a health check endpoint.
-
-The Streamlit application remains the reference implementation and
-continues to run independently at parafinix.streamlit.app.
+main.py — Parafinix AI FastAPI backend.
+Production-ready CORS, all routers registered.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import JSONResponse
 from routers import clients, cases, generate, documents, upload, admin, auth, ai_chat
 
 app = FastAPI(
     title="Parafinix AI API",
-    description="Backend API for the Parafinix AI Paraplanner Co-Pilot. "
-                "Consumed by the Lovable React frontend.",
+    description="Backend API for the Parafinix AI Paraplanner Co-Pilot.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
 # ── CORS ─────────────────────────────────────────────────────
-# Allow the Lovable frontend (and localhost for development) to call the API.
-# Tighten origins to the production Lovable domain once it is known.
+# Explicit origins for production + regex for Lovable preview domains.
+# FastAPI CORSMiddleware does not support wildcard subdomains in allow_origins
+# so we use allow_origin_regex for all *.lovable.app patterns.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://*.lovable.app",
-        "https://*.lovableproject.com",
+        "http://localhost:8080",
+        "https://lovable.app",
+        "https://www.lovable.app",
     ],
+    allow_origin_regex=(
+        r"https://(.*\.lovable\.app"
+        r"|.*\.lovableproject\.com"
+        r"|.*\.railway\.app"
+        r"|id-preview--.*\.lovable\.app)"
+    ),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Type"],
+    max_age=3600,
 )
 
 # ── ROUTERS ───────────────────────────────────────────────────
@@ -48,13 +52,12 @@ app.include_router(admin.router,     prefix="/admin",     tags=["Admin"])
 app.include_router(ai_chat.router,   prefix="/ai",        tags=["AI Assistant"])
 
 
-# ── HEALTH CHECK ──────────────────────────────────────────────
+# ── HEALTH ────────────────────────────────────────────────────
 @app.get("/health", tags=["Health"])
 async def health():
-    """Railway and Lovable use this to confirm the API is running."""
     return {"status": "ok", "service": "parafinix-api", "version": "1.0.0"}
 
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {"message": "Parafinix AI API. See /docs for the full API reference."}
+    return {"message": "Parafinix AI API is running. See /docs for reference."}

@@ -1,17 +1,18 @@
 """
 routers/documents.py — Document generation endpoints.
 
-POST   /documents/suitability  → build suitability .docx → base64
-POST   /documents/compliance   → build compliance .docx  → base64
-POST   /documents/factfind     → build fact-find .docx   → base64
+Returns documents in two formats:
+  - JSON with base64_content (for programmatic use)
+  - Direct file download via ?download=true query param (for browser)
 
-All documents returned as base64-encoded strings.
-Lovable decodes client-side and triggers a browser download.
-No files stored on the server — regenerate on demand.
+POST /documents/suitability
+POST /documents/compliance
+POST /documents/factfind
 """
 import base64
 from datetime import date
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from middleware.auth import CurrentUser
 from models.requests import (
     BuildSuitabilityDocRequest,
@@ -27,23 +28,37 @@ router = APIRouter()
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def _to_base64(buf) -> str:
-    """Converts an io.BytesIO buffer to a base64 string."""
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+def _safe_name(name: str) -> str:
+    return name.replace(" ", "_").replace("&", "and").replace("/", "-")
 
 
 def _filename(client_name: str, doc_type: str) -> str:
-    safe = client_name.replace(" ", "_").replace("&", "and")
-    today = date.today().strftime("%d%b%Y")
-    return f"Parafinix_{safe}_{doc_type}_{today}.docx"
+    return f"Parafinix_{_safe_name(client_name)}_{doc_type}_{date.today().strftime('%d%b%Y')}.docx"
+
+
+def _respond(buf, filename: str, download: bool):
+    """Returns either a streaming file download or base64 JSON."""
+    if download:
+        return StreamingResponse(
+            buf,
+            media_type=DOCX_MIME,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    return {
+        "filename": filename,
+        "base64_content": base64.b64encode(buf.getvalue()).decode("utf-8"),
+        "mime_type": DOCX_MIME,
+        "content_disposition": f'attachment; filename="{filename}"',
+    }
 
 
 @router.post("/suitability")
-async def build_suitability(body: BuildSuitabilityDocRequest, user: CurrentUser):
-    """
-    Builds a complete suitability report .docx from the four generated parts.
-    Returns the file as a base64-encoded string.
-    """
+async def build_suitability(
+    body: BuildSuitabilityDocRequest,
+    user: CurrentUser,
+    download: bool = Query(default=False, description="Set true for direct browser download"),
+):
+    """Builds the suitability report .docx."""
     buf = build_suitability_doc(
         client_name=body.client_name,
         adviser_name=body.adviser_name or "",
@@ -56,19 +71,16 @@ async def build_suitability(body: BuildSuitabilityDocRequest, user: CurrentUser)
         part3=body.report_part3 or "",
         part4=body.report_part4 or "",
     )
-    return {
-        "filename": _filename(body.client_name, "Suitability_Report"),
-        "base64_content": _to_base64(buf),
-        "mime_type": DOCX_MIME,
-    }
+    return _respond(buf, _filename(body.client_name, "Suitability_Report"), download)
 
 
 @router.post("/compliance")
-async def build_compliance(body: BuildComplianceDocRequest, user: CurrentUser):
-    """
-    Builds a compliance review .docx with RAG rating, 28-point check, sign-off page.
-    Returns the file as a base64-encoded string.
-    """
+async def build_compliance(
+    body: BuildComplianceDocRequest,
+    user: CurrentUser,
+    download: bool = Query(default=False),
+):
+    """Builds the compliance review .docx."""
     buf = build_compliance_doc(
         client_name=body.client_name,
         adviser_name=body.adviser_name or "",
@@ -79,21 +91,16 @@ async def build_compliance(body: BuildComplianceDocRequest, user: CurrentUser):
         flags=body.flags,
         missing=body.fails,
     )
-    return {
-        "filename": _filename(body.client_name, "Compliance_Review"),
-        "base64_content": _to_base64(buf),
-        "mime_type": DOCX_MIME,
-    }
+    return _respond(buf, _filename(body.client_name, "Compliance_Review"), download)
 
 
 @router.post("/factfind")
-async def build_factfind(body: BuildFactFindDocRequest, user: CurrentUser):
-    """
-    Builds a fact-find .docx document.
-    client_facing=True  → blank lines for missing fields (for client review/signature)
-    client_facing=False → [MISSING] in red + gap analysis (internal paraplanner copy)
-    Returns the file as a base64-encoded string.
-    """
+async def build_factfind(
+    body: BuildFactFindDocRequest,
+    user: CurrentUser,
+    download: bool = Query(default=False),
+):
+    """Builds the fact-find .docx (client copy or internal)."""
     buf = build_factfind_doc(
         client_name=body.client_name,
         adviser_name=body.adviser_name or "",
@@ -102,8 +109,4 @@ async def build_factfind(body: BuildFactFindDocRequest, user: CurrentUser):
         client_facing=body.client_facing,
     )
     doc_type = "FactFind_Client" if body.client_facing else "FactFind_Internal"
-    return {
-        "filename": _filename(body.client_name, doc_type),
-        "base64_content": _to_base64(buf),
-        "mime_type": DOCX_MIME,
-    }
+    return _respond(buf, _filename(body.client_name, doc_type), download)
