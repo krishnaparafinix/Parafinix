@@ -84,3 +84,21 @@ async def update_case_status(case_id: str, body: UpdateCaseStatusRequest,
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db.update_case_status(case_id, body.status, token)
     return {"message": "Status updated", "case_id": case_id, "status": body.status}
+
+
+@router.get("/cases")
+async def list_all_cases(user: CurrentUser, request: Request):
+    """Returns all saved cases across all clients for the logged-in user."""
+    import services.database as db
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    # Get all clients first, then all their cases
+    clients = db.get_clients(user.user_id, token)
+    all_cases = []
+    for client in clients:
+        cases = db.get_cases(client["id"], token)
+        for case in cases:
+            case["client_name"] = client.get("client_name", "")
+        all_cases.extend(cases)
+    # Sort by created_at descending
+    all_cases.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return {"cases": all_cases, "total": len(all_cases)}

@@ -10,7 +10,7 @@ continues to run independently at parafinix.streamlit.app.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import clients, cases, generate, documents, upload, admin
+from routers import clients, cases, generate, documents, upload, admin, auth, ai_chat
 
 app = FastAPI(
     title="Parafinix AI API",
@@ -38,12 +38,14 @@ app.add_middleware(
 )
 
 # ── ROUTERS ───────────────────────────────────────────────────
+app.include_router(auth.router,      prefix="/auth",      tags=["Authentication"])
 app.include_router(clients.router,   prefix="/clients",   tags=["Clients"])
 app.include_router(cases.router,     prefix="",           tags=["Cases"])
 app.include_router(generate.router,  prefix="/generate",  tags=["Generation"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 app.include_router(upload.router,    prefix="/upload",    tags=["Upload"])
 app.include_router(admin.router,     prefix="/admin",     tags=["Admin"])
+app.include_router(ai_chat.router,   prefix="/ai",        tags=["AI Assistant"])
 
 
 # ── HEALTH CHECK ──────────────────────────────────────────────

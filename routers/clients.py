@@ -37,3 +37,17 @@ async def delete_client(client_id: str, user: CurrentUser, request: Request):
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db.delete_client_folder(client_id, token)
     return {"message": "Deleted", "client_id": client_id}
+
+
+@router.get("/{client_id}")
+async def get_client(client_id: str, user: CurrentUser, request: Request):
+    """Returns a single client folder with its case count."""
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    clients = db.get_clients(user.user_id, token)
+    client = next((c for c in clients if c["id"] == client_id), None)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+    cases = db.get_cases(client_id, token)
+    client["case_count"] = len(cases)
+    client["recent_cases"] = cases[:3]  # last 3 for preview
+    return client
