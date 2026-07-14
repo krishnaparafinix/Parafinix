@@ -5,7 +5,7 @@ POST   /generate/preflight   → fast pre-flight quality scan
 POST   /generate/extract     → fact-find extraction from raw text
 POST   /generate/report      → full 4-pass suitability report generation
 """
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from middleware.auth import get_current_user, AuthenticatedUser
 from models.requests import PreflightRequest, ExtractFactFindRequest, GenerateReportRequest
 from services.preflight import run_preflight

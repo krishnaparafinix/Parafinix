@@ -11,7 +11,7 @@ POST /documents/factfind
 """
 import base64
 from datetime import date
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from middleware.auth import get_current_user, AuthenticatedUser
 from models.requests import (

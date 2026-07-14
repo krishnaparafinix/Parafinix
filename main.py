@@ -78,3 +78,37 @@ async def health():
 @app.get("/", tags=["Health"])
 async def root():
     return {"message": "Parafinix AI API is running. See /docs for reference."}
+
+
+@app.get("/debug", tags=["Health"])
+async def debug():
+    """Returns startup diagnostics — remove before production."""
+    import sys, os
+    results = {
+        "python_version": sys.version,
+        "env_vars_set": {
+            "MESH_API_KEY": bool(os.environ.get("MESH_API_KEY")),
+            "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
+            "SUPABASE_ANON_KEY": bool(os.environ.get("SUPABASE_ANON_KEY")),
+            "SUPABASE_JWT_SECRET": bool(os.environ.get("SUPABASE_JWT_SECRET")),
+            "ADMIN_EMAIL": bool(os.environ.get("ADMIN_EMAIL")),
+        },
+        "imports": {}
+    }
+    for mod_name, import_str in [
+        ("fastapi", "import fastapi"),
+        ("pyjwt", "import jwt"),
+        ("supabase", "import supabase"),
+        ("openai", "import openai"),
+        ("docx", "import docx"),
+        ("pdfplumber", "import pdfplumber"),
+        ("reportlab", "from reportlab.lib.pagesizes import A4"),
+        ("httpx", "import httpx"),
+        ("cryptography", "import cryptography"),
+    ]:
+        try:
+            exec(import_str)
+            results["imports"][mod_name] = "OK"
+        except Exception as e:
+            results["imports"][mod_name] = f"FAILED: {e}"
+    return results

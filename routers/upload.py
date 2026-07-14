@@ -15,7 +15,7 @@ POST /upload/pdf
     }
   - extracted_text is passed directly to POST /generate/extract
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from middleware.auth import get_current_user, AuthenticatedUser
 from services.pdf_reader import extract_text_from_pdf
 

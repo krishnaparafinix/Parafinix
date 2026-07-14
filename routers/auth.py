@@ -1,7 +1,7 @@
 """
 routers/auth.py — Authentication endpoints.
 """
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, status, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
 from middleware.auth import get_current_user, AuthenticatedUser

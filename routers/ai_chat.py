@@ -5,7 +5,7 @@ POST /ai/chat              → paraplanning Q&A — returns {"reply": "..."}
 POST /ai/compliance/rerun  → rerun 28-point check on a saved case
 POST /ai/compliance/fix    → fix suggestion for a compliance flag
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
 from middleware.auth import get_current_user, AuthenticatedUser
