@@ -55,14 +55,18 @@ app.include_router(ai_chat.router,   prefix="/ai",        tags=["AI Assistant"])
 # ── STARTUP: pre-fetch JWKS ──────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    """Pre-fetches Supabase JWKS at startup so the first request is fast."""
+    """
+    Pre-fetches Supabase JWKS at startup.
+    Non-fatal — if this fails the app still starts and JWKS
+    is fetched lazily on the first authenticated request.
+    """
     try:
-        from middleware.auth import _fetch_jwks, _jwks_cache
         import middleware.auth as auth_mod
-        auth_mod._jwks_cache = _fetch_jwks()
-        print(f"JWKS loaded: {len(auth_mod._jwks_cache)} key(s)")
+        auth_mod._jwks_cache = auth_mod._fetch_jwks()
+        print(f"JWKS pre-loaded: {len(auth_mod._jwks_cache)} key(s)")
     except Exception as e:
-        print(f"Warning: JWKS pre-fetch failed ({e}) — will retry on first request")
+        # Never crash on startup due to JWKS fetch failure
+        print(f"JWKS pre-fetch skipped ({e}) — will fetch on first authenticated request")
 
 
 # ── HEALTH ────────────────────────────────────────────────────
