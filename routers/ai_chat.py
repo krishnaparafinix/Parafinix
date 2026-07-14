@@ -57,7 +57,7 @@ async def ai_chat(body: ChatRequest, user: CurrentUser):
 
 @router.post("/compliance/rerun")
 async def compliance_rerun(
-    body: ComplianceRerunRequest, user: CurrentUser, request: Request
+    request: Request, body: ComplianceRerunRequest, user: CurrentUser
 ):
     """Reruns the 28-point compliance check on a saved case and updates the database."""
     token = request.headers.get("authorization", "").replace("Bearer ", "").replace("bearer ", "")

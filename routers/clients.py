@@ -68,7 +68,7 @@ async def list_clients(user: CurrentUser, request: Request):
 
 
 @router.post("")
-async def create_client(body: CreateClientRequest, user: CurrentUser, request: Request):
+async def create_client(request: Request, body: CreateClientRequest, user: CurrentUser):
     token = _token(request)
     try:
         data = {
@@ -102,7 +102,7 @@ async def get_client(client_id: str, user: CurrentUser, request: Request):
 
 @router.patch("/{client_id}")
 async def update_client(
-    client_id: str, body: UpdateClientRequest, user: CurrentUser, request: Request
+    client_id: str, request: Request, body: UpdateClientRequest, user: CurrentUser
 ):
     """Updates client profile fields."""
     token = _token(request)

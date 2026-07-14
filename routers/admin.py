@@ -58,7 +58,7 @@ class UpdateRoleRequest(BaseModel):
 
 @router.patch("/users/{user_id}")
 async def update_user_role(
-    user_id: str, body: UpdateRoleRequest, admin: AdminUser, request: Request
+    user_id: str, request: Request, body: UpdateRoleRequest, admin: AdminUser
 ):
     """Updates a user's role. Admin only."""
     valid_roles = {"user", "admin", "paraplanner", "adviser"}
@@ -158,7 +158,7 @@ async def get_firm_settings(user: CurrentUser, request: Request):
 @router.put("/firm")
 @router.patch("/firm")
 async def update_firm_settings(
-    body: FirmSettingsRequest, user: CurrentUser, request: Request
+    request: Request, body: FirmSettingsRequest, user: CurrentUser
 ):
     """Creates or updates firm settings for the authenticated user."""
     token = _token(request)

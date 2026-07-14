@@ -50,7 +50,7 @@ async def delete_case(case_id: str, user: CurrentUser, request: Request):
 
 @router.patch("/cases/{case_id}/status")
 async def update_status(
-    case_id: str, body: UpdateCaseStatusRequest, user: CurrentUser, request: Request
+    case_id: str, request: Request, body: UpdateCaseStatusRequest, user: CurrentUser
 ):
     if body.status not in VALID_STATUSES:
         raise HTTPException(
@@ -69,7 +69,7 @@ async def list_client_cases(client_id: str, user: CurrentUser, request: Request)
 
 @router.post("/clients/{client_id}/cases")
 async def save_case(
-    client_id: str, body: SaveCaseRequest, user: CurrentUser, request: Request
+    client_id: str, request: Request, body: SaveCaseRequest, user: CurrentUser
 ):
     token = _token(request)
     version = db.get_next_version(client_id, token)
