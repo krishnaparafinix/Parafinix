@@ -14,7 +14,7 @@ from datetime import date
 from fastapi import APIRouter, Query
 from services.pdf_export import docx_to_pdf
 from fastapi.responses import StreamingResponse
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from models.requests import (
     BuildSuitabilityDocRequest,
     BuildComplianceDocRequest,
@@ -66,7 +66,7 @@ def _respond(buf, filename: str, download: bool, fmt: str = "docx"):
 @router.post("/suitability")
 async def build_suitability(
     body: BuildSuitabilityDocRequest,
-    user: CurrentUser,
+    user: AuthenticatedUser = Depends(get_current_user),
     download: bool = Query(default=False, description="Set true for direct browser download"),
 ):
     """Builds the suitability report .docx."""
@@ -88,7 +88,7 @@ async def build_suitability(
 @router.post("/compliance")
 async def build_compliance(
     body: BuildComplianceDocRequest,
-    user: CurrentUser,
+    user: AuthenticatedUser = Depends(get_current_user),
     download: bool = Query(default=False),
 ):
     """Builds the compliance review .docx."""
@@ -108,7 +108,7 @@ async def build_compliance(
 @router.post("/factfind")
 async def build_factfind(
     body: BuildFactFindDocRequest,
-    user: CurrentUser,
+    user: AuthenticatedUser = Depends(get_current_user),
     download: bool = Query(default=False),
 ):
     """Builds the fact-find .docx (client copy or internal)."""

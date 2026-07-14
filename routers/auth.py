@@ -4,7 +4,7 @@ routers/auth.py — Authentication endpoints.
 from fastapi import APIRouter, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Optional
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from supabase import create_client
 from config import settings
 
@@ -92,7 +92,7 @@ async def register(body: RegisterRequest):
 
 
 @router.get("/me")
-async def get_me(user: CurrentUser, request: Request):
+async def get_me(request: Request, user: AuthenticatedUser = Depends(get_current_user)):
     """Returns the authenticated user's profile."""
     try:
         token = request.headers.get("authorization", "").replace("Bearer ", "").replace("bearer ", "")
@@ -115,7 +115,7 @@ async def get_me(user: CurrentUser, request: Request):
 
 
 @router.post("/logout")
-async def logout(user: CurrentUser, request: Request):
+async def logout(request: Request, user: AuthenticatedUser = Depends(get_current_user)):
     """Signs out the current user."""
     try:
         token = request.headers.get("authorization", "").replace("Bearer ", "").replace("bearer ", "")

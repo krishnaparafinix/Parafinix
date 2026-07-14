@@ -1,13 +1,10 @@
 """
 routers/clients.py — Client folder endpoints with extended profile.
-
-Item 5: Client model extended with email, phone, segment,
-portfolio_value, rag, owner_id.
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from supabase import create_client
 from config import settings
 import services.database as db
@@ -32,10 +29,10 @@ class CreateClientRequest(BaseModel):
     client_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
-    segment: Optional[str] = None       # e.g. "mass_market", "HNW", "UHNW"
+    segment: Optional[str] = None
     portfolio_value: Optional[float] = None
-    rag: Optional[str] = "GREEN"        # RED | AMBER | GREEN
-    owner_id: Optional[str] = None      # adviser user_id who owns this client
+    rag: Optional[str] = "GREEN"
+    owner_id: Optional[str] = None
 
 
 class UpdateClientRequest(BaseModel):
@@ -49,7 +46,6 @@ class UpdateClientRequest(BaseModel):
 
 
 def _enrich(clients: list, token: str) -> list:
-    """Adds case_count, latest RAG and status to each client."""
     enriched = []
     for c in clients:
         cases = db.get_cases(c["id"], token)
@@ -61,14 +57,21 @@ def _enrich(clients: list, token: str) -> list:
 
 
 @router.get("")
-async def list_clients(user: CurrentUser, request: Request):
+async def list_clients(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     token = _token(request)
     clients = db.get_clients(user.user_id, token)
     return {"clients": _enrich(clients, token)}
 
 
 @router.post("")
-async def create_client(request: Request, body: CreateClientRequest, user: CurrentUser):
+async def create_client(
+    request: Request,
+    body: CreateClientRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     token = _token(request)
     try:
         data = {
@@ -88,7 +91,11 @@ async def create_client(request: Request, body: CreateClientRequest, user: Curre
 
 
 @router.get("/{client_id}")
-async def get_client(client_id: str, user: CurrentUser, request: Request):
+async def get_client(
+    client_id: str,
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     token = _token(request)
     clients = db.get_clients(user.user_id, token)
     client = next((c for c in clients if c["id"] == client_id), None)
@@ -102,9 +109,11 @@ async def get_client(client_id: str, user: CurrentUser, request: Request):
 
 @router.patch("/{client_id}")
 async def update_client(
-    client_id: str, request: Request, body: UpdateClientRequest, user: CurrentUser
+    client_id: str,
+    request: Request,
+    body: UpdateClientRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Updates client profile fields."""
     token = _token(request)
     data = {k: v for k, v in body.dict().items() if v is not None}
     if not data:
@@ -117,6 +126,10 @@ async def update_client(
 
 
 @router.delete("/{client_id}")
-async def delete_client(client_id: str, user: CurrentUser, request: Request):
+async def delete_client(
+    client_id: str,
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     db.delete_client_folder(client_id, _token(request))
     return {"message": "Deleted", "client_id": client_id}

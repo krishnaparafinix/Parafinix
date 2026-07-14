@@ -16,14 +16,14 @@ POST /upload/pdf
   - extracted_text is passed directly to POST /generate/extract
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from services.pdf_reader import extract_text_from_pdf
 
 router = APIRouter()
 
 
 @router.post("/pdf")
-async def upload_pdf(user: CurrentUser, file: UploadFile = File(...)):
+async def upload_pdf(user: AuthenticatedUser = Depends(get_current_user), file: UploadFile = File(...)):
     """
     Extracts text from an uploaded PDF.
 

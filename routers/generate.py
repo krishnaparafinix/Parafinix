@@ -6,7 +6,7 @@ POST   /generate/extract     → fact-find extraction from raw text
 POST   /generate/report      → full 4-pass suitability report generation
 """
 from fastapi import APIRouter, Request
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from models.requests import PreflightRequest, ExtractFactFindRequest, GenerateReportRequest
 from services.preflight import run_preflight
 from services.fact_find import extract_fact_find, fact_find_to_notes
@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/preflight")
-async def preflight(body: PreflightRequest, user: CurrentUser):
+async def preflight(body: PreflightRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """
     Fast pre-flight quality scan on meeting notes.
     Returns confidence rating, what was found, and what is missing.
@@ -32,7 +32,7 @@ async def preflight(body: PreflightRequest, user: CurrentUser):
 
 
 @router.post("/extract")
-async def extract(body: ExtractFactFindRequest, user: CurrentUser):
+async def extract(body: ExtractFactFindRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """
     Extracts ~60 structured fields from raw meeting notes or PDF text.
     Returns a structured fact-find JSON the Lovable frontend renders
@@ -50,7 +50,7 @@ async def extract(body: ExtractFactFindRequest, user: CurrentUser):
 
 
 @router.post("/report")
-async def generate_report(body: GenerateReportRequest, user: CurrentUser):
+async def generate_report(body: GenerateReportRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """
     Runs the full 4-pass suitability report generation pipeline.
 

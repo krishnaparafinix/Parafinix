@@ -8,7 +8,7 @@ POST /ai/compliance/fix    → fix suggestion for a compliance flag
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
-from middleware.auth import CurrentUser
+from middleware.auth import get_current_user, AuthenticatedUser
 from services.ai_client import call_drafting_model, call_compliance_model
 from services.ai_prompts import COMPLIANCE_SYSTEM, COMPLIANCE_ITEMS
 import services.database as db
@@ -42,7 +42,7 @@ class ComplianceFixRequest(BaseModel):
 
 
 @router.post("/chat")
-async def ai_chat(body: ChatRequest, user: CurrentUser):
+async def ai_chat(body: ChatRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """
     General AI assistant for paraplanning questions.
     Returns {"reply": "..."} — matches frontend contract.
@@ -110,7 +110,7 @@ async def compliance_rerun(
 
 
 @router.post("/compliance/fix")
-async def compliance_fix(body: ComplianceFixRequest, user: CurrentUser):
+async def compliance_fix(body: ComplianceFixRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """Returns a specific fix suggestion for a compliance flag."""
     prompt = (
         f"Compliance flag: {body.flag_item}\n\n"
