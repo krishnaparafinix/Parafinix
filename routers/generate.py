@@ -91,7 +91,7 @@ async def generate_report(body: GenerateReportRequest, user: AuthenticatedUser =
     p2_msg = (
         f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n\n"
         f"NOTES:\n{notes}\n\n"
-        f"SECTIONS 1-5 ALREADY DRAFTED:\n{part1[:2500]}\n\n"
+        f"SECTIONS 1-5:\n{part1[:3000]}\n\n"
         f"{PASS2_PROMPT}"
     )
     part2 = call_drafting_model(SYSTEM_PROMPT, p2_msg, max_tokens=6000)
