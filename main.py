@@ -56,17 +56,26 @@ app.include_router(ai_chat.router,   prefix="/ai",        tags=["AI Assistant"])
 @app.on_event("startup")
 async def startup_event():
     """
-    Pre-fetches Supabase JWKS at startup.
-    Non-fatal — if this fails the app still starts and JWKS
-    is fetched lazily on the first authenticated request.
+    Warms up all connections at startup so the first real request
+    is not penalised by cold-start latency.
+    All steps are non-fatal — the app always starts even if warmup fails.
     """
+    # 1. Pre-fetch Supabase JWKS (ES256 public keys for JWT verification)
     try:
         import middleware.auth as auth_mod
         auth_mod._jwks_cache = auth_mod._fetch_jwks()
-        print(f"JWKS pre-loaded: {len(auth_mod._jwks_cache)} key(s)")
+        print(f"JWKS pre-loaded: {len(auth_mod._jwks_cache)} key(s) ✅")
     except Exception as e:
-        # Never crash on startup due to JWKS fetch failure
-        print(f"JWKS pre-fetch skipped ({e}) — will fetch on first authenticated request")
+        print(f"JWKS pre-fetch skipped ({e})")
+
+    # 2. Warm up Supabase connection pool
+    try:
+        from services.supabase_client import warmup
+        warmup()
+    except Exception as e:
+        print(f"Supabase warmup skipped ({e})")
+
+    print("Startup complete — Parafinix API ready")
 
 
 # ── HEALTH ────────────────────────────────────────────────────

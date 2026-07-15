@@ -12,25 +12,19 @@ Changes from Streamlit version:
 
 Logic and SQL operations are identical to the Streamlit reference.
 """
-from supabase import create_client, Client
 from fastapi import HTTPException, status
 from datetime import datetime
 from config import settings
 
 
-def get_supabase_client(access_token: str | None = None) -> Client:
+def get_supabase_client(access_token: str | None = None):
     """
-    Creates a Supabase client. If an access_token is provided (from the
-    verified JWT), sets the session so Row Level Security applies correctly.
-    For admin operations pass None to use the anon key directly.
+    Returns a Supabase client.
+    Uses shared anon client for admin ops, user client for RLS-protected ops.
     """
-    client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
     if access_token:
-        try:
-            client.auth.set_session(access_token, access_token)
-        except Exception:
-            pass
-    return client
+        return get_user_client(access_token)
+    return get_anon_client()
 
 
 # ── CLIENTS ──────────────────────────────────────────────────

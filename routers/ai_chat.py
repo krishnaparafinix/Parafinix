@@ -79,10 +79,8 @@ async def compliance_rerun(
     rag    = "RED" if fails > 2 else ("AMBER" if flags > 5 or fails > 0 else "GREEN")
 
     try:
-        from supabase import create_client
-        from config import settings
-        client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
-        client.auth.set_session(token, token)
+        from services.supabase_client import get_user_client
+        client = get_user_client(token)
         client.table("cases").update({
             "compliance_result": check_text,
             "passes": passes, "flags": flags, "fails": fails, "rag_rating": rag,

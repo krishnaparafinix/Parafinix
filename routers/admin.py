@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
 from middleware.auth import get_current_user, require_admin, AuthenticatedUser
-from supabase import create_client
+from services.supabase_client import get_anon_client, get_user_client
 from config import settings
 import services.database as db
 from datetime import datetime
@@ -14,11 +14,9 @@ router = APIRouter()
 
 
 def _db(token: str = None):
-    c = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
     if token:
-        try: c.auth.set_session(token, token)
-        except Exception: pass
-    return c
+        return get_user_client(token)
+    return get_anon_client()
 
 
 def _token(r: Request) -> str:
