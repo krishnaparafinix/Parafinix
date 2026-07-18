@@ -17,16 +17,11 @@ THEME_CSS = """
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes pfxTraceFlow {
-        0% { stroke-dashoffset: 240; }
-        100% { stroke-dashoffset: 0; }
-    }
 
-    /* Text colour fix — forces dark, readable text regardless of browser theme */
     .stApp, .stApp p, .stApp label, .stApp span, .stApp div,
     h1, h2, h3, h4, .stMarkdown, [data-testid="stWidgetLabel"] { color: #0B1F3A !important; }
     .stTextInput input, .stTextArea textarea { color: #0B1F3A !important; background: #FFFFFF !important; }
-    .stTabs button { color: #64748B !important; transition: color 0.15s ease; }
+    .stTabs button { color: #64748B !important; transition: color 0.15s ease !important; }
     .stTabs button[aria-selected="true"] { color: #3B82F6 !important; }
     .stButton > button { color: #FFFFFF !important; }
 
@@ -41,19 +36,24 @@ THEME_CSS = """
     .pfx-tag { font-size: 0.68rem; font-weight: 600; letter-spacing: 3px; color: #10B981; margin-top: 3px; }
 
     .stButton > button {
-        background: #10B981; border-radius: 9px; border: none; padding: 11px 22px;
-        font-weight: 600; font-size: 0.9rem; transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
-    .stButton > button:hover { background: #0E9A6E; transform: translateY(-1px);
-        box-shadow: 0 4px 14px rgba(16,185,129,0.22); }
-    .stButton > button:active { transform: translateY(0); }
+        background: #10B981 !important; border-radius: 9px !important; border: none !important; padding: 11px 22px !important;
+        font-weight: 600 !important; font-size: 0.9rem !important;
+        transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important; }
+    .stButton > button:hover {
+        background: #0E9A6E !important; transform: translateY(-1px) !important;
+        box-shadow: 0 4px 14px rgba(16,185,129,0.35) !important; }
+    .stButton > button:active { transform: translateY(0) !important; }
 
-    div[data-testid="metric-container"] { background: white; border-radius: 12px;
-        padding: 14px 16px; border: 1px solid #E2E8F0; transition: border-color 0.2s ease;
+    div[data-testid="metric-container"] { background: white !important; border-radius: 12px !important;
+        padding: 14px 16px !important; border: 1px solid #E2E8F0 !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
         animation: pfxFadeInUp 0.4s ease both; }
-    div[data-testid="metric-container"]:hover { border-color: #3B82F6; }
+    div[data-testid="metric-container"]:hover {
+        border-color: #3B82F6 !important; box-shadow: 0 4px 12px rgba(59,130,246,0.15) !important; }
 
     .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-        border-radius: 9px; border: 1px solid #E2E8F0; transition: border-color 0.15s ease; }
+        border-radius: 9px !important; border: 1px solid #E2E8F0 !important;
+        transition: border-color 0.15s ease !important; }
     .stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
         border-color: #3B82F6 !important; }
 
@@ -63,18 +63,22 @@ THEME_CSS = """
     .flag { color: #B8860B; font-weight: 600; }
     .miss { color: #C0392B; font-weight: 600; }
 
-    .pfx-card { background: white; border-radius: 14px; padding: 22px;
-        border: 1px solid #E2E8F0; margin-bottom: 16px;
-        transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    .pfx-card { background: white !important; border-radius: 14px !important; padding: 22px !important;
+        border: 1px solid #E2E8F0 !important; margin-bottom: 16px !important;
+        transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
         animation: pfxFadeInUp 0.35s ease both; }
-    .pfx-card:hover { border-color: #3B82F6; transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(11,31,58,0.08); }
+    .pfx-card:hover {
+        border-color: #3B82F6 !important; transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(11,31,58,0.14) !important; }
 
-    .folder-card { background: white; border-radius: 12px; padding: 16px 18px;
-        border: 1px solid #E2E8F0; margin-bottom: 10px; border-left: 4px solid #10B981;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    .folder-card { background: white !important; border-radius: 12px !important; padding: 16px 18px !important;
+        border: 1px solid #E2E8F0 !important; margin-bottom: 10px !important; border-left: 4px solid #10B981 !important;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
         animation: pfxFadeInUp 0.35s ease both; }
-    .folder-card:hover { transform: translateX(3px); box-shadow: 0 4px 14px rgba(11,31,58,0.06); }
+    .folder-card:hover {
+        transform: translateX(4px) !important;
+        box-shadow: 0 4px 16px rgba(11,31,58,0.12) !important;
+        border-left-color: #3B82F6 !important; }
     .folder-name { font-weight: 700; color: #0B1F3A; font-size: 1.05rem; }
     .folder-meta { font-size: 0.8rem; color: #64748B; margin-top: 3px; }
 
