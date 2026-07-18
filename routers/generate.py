@@ -1,13 +1,16 @@
 """
 routers/generate.py — AI generation endpoints.
 
-Generation pipeline matches the proven Streamlit implementation exactly:
-  - 2-pass generation (same as Streamlit _run_generation)
-  - Same prompts, same token limits, same context windows
-  - Same compliance check logic
-  - No simplifications or approximations
+Suitability report uses 3-pass generation to ensure complete output:
+  Pass 1: Sections 1-5 (8000 tokens)
+  Pass 2: All of Section 6 - recommendations (8000 tokens)  
+  Pass 3: Sections 7-11 + Paraplanner Check (6000 tokens)
+  Compliance: 28-point COBS 9A review (2500 tokens)
+
+This matches the quality and structure of the reference Anurag report,
+with increased tokens to prevent the mid-section cutoff.
 """
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from middleware.auth import get_current_user, AuthenticatedUser
@@ -16,7 +19,8 @@ from services.fact_find import extract_fact_find, fact_find_to_notes
 from services.ai_client import call_drafting_model, call_compliance_model
 from services.ai_prompts import (
     SYSTEM_PROMPT, FULL_REPORT_PROMPT,
-    PASS2_PROMPT, TEMPLATE_PROMPT,
+    PASS2_PROMPT, PASS3_PROMPT, PASS4_PROMPT,
+    TEMPLATE_PROMPT,
     COMPLIANCE_SYSTEM, COMPLIANCE_ITEMS,
 )
 
@@ -57,11 +61,7 @@ async def extract(
     body: ExtractFactFindRequest,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """
-    Extracts structured fact-find data from raw notes.
-    Identical to the Streamlit extract_fact_find() call.
-    """
-    from fastapi import HTTPException
+    """Extracts structured fact-find data from raw notes."""
     data = extract_fact_find(body.notes)
     if data is None:
         raise HTTPException(
@@ -78,14 +78,25 @@ async def generate_report(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    2-pass suitability report generation — exact copy of Streamlit _run_generation().
+    3-pass suitability report generation.
 
-    Pass 1: Executive Summary + Sections 1-5 (circumstances, objectives, risk, analysis)
-    Pass 2: Section 6 (recommendations) + Sections 7-11 + Paraplanner Check
-    Compliance: 28-point COBS 9A review of the combined output
+    Produces the same quality as the reference Anurag/David reports.
+    Increased token limits prevent the mid-recommendation cutoff.
 
-    This is the proven implementation that produced the working Anurag report.
-    Do not change this without testing against the Streamlit reference output.
+    Pass 1 (8000 tokens): Executive Summary + Sections 1-5
+      - Client circumstances, objectives, risk analysis
+      - Net worth table, pension analysis, retirement scenarios
+
+    Pass 2 (8000 tokens): Section 6 — All recommendations
+      - Every recommendation with full 8-part structure
+      - Current position, why change needed, recommendation,
+        suitability rationale, benefits, risks, alternatives, outcome
+
+    Pass 3 (6000 tokens): Sections 7-11 + Paraplanner Check
+      - Product information, charges, tax, risks, next steps
+      - Paraplanner verification checklist
+
+    Compliance (2500 tokens): 28-point COBS 9A review
     """
     notes   = body.notes
     cname   = body.client_name
@@ -96,8 +107,7 @@ async def generate_report(
     ref     = body.report_ref or ""
     template = body.template_text or ""
 
-    # ── PASS 1: Sections 1–5 ─────────────────────────────────
-    # Exact match to Streamlit: same prompt construction, same token limit
+    # ── PASS 1: Executive Summary + Sections 1–5 ─────────────
     if template:
         p1_msg = (
             f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n"
@@ -111,20 +121,33 @@ async def generate_report(
             f"Basis: {basis}\nCharges: {charges}\n\nNOTES:\n{notes}\n\n"
             f"{FULL_REPORT_PROMPT}"
         )
+    part1 = call_drafting_model(SYSTEM_PROMPT, p1_msg, max_tokens=8000)
 
-    part1 = call_drafting_model(SYSTEM_PROMPT, p1_msg, max_tokens=6000)
-
-    # ── PASS 2: Recommendations + Sections 7–11 ──────────────
-    # Exact match to Streamlit: part1[:3000] context, same prompt
+    # ── PASS 2: All of Section 6 — Recommendations ───────────
+    # Increased to 8000 tokens to fit all recommendations without cutoff
+    # Uses full PASS2_PROMPT which covers ALL recommendations (not just first half)
     p2_msg = (
         f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n\n"
-        f"NOTES:\n{notes}\n\nSECTIONS 1-5:\n{part1[:3000]}\n\n{PASS2_PROMPT}"
+        f"NOTES:\n{notes}\n\n"
+        f"SECTIONS 1-5 ALREADY DRAFTED:\n{part1[:3000]}\n\n"
+        f"{PASS2_PROMPT}\n\n"
+        f"IMPORTANT: Write ALL recommendations for this client — do not stop early. "
+        f"Cover every relevant area from the notes. Each recommendation must use the "
+        f"full 8-part structure. Do not add a 'recommendations continue' note."
     )
-    part2 = call_drafting_model(SYSTEM_PROMPT, p2_msg, max_tokens=6000)
+    part2 = call_drafting_model(SYSTEM_PROMPT, p2_msg, max_tokens=8000)
+
+    # ── PASS 3: Sections 7–11 + Paraplanner Check ────────────
+    p3_msg = (
+        f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n\n"
+        f"NOTES:\n{notes}\n\n"
+        f"RECOMMENDATIONS ALREADY WRITTEN (do not repeat):\n{part2[:2000]}\n\n"
+        f"{PASS4_PROMPT}"
+    )
+    part3 = call_drafting_model(SYSTEM_PROMPT, p3_msg, max_tokens=6000)
 
     # ── COMPLIANCE CHECK ─────────────────────────────────────
-    # Exact match to Streamlit: combined[:7000], same system + items
-    combined = part1 + "\n\n" + part2
+    combined = f"{part1}\n\n{part2}\n\n{part3}"
     check_text = call_compliance_model(
         COMPLIANCE_SYSTEM,
         f"Report:\n{combined[:7000]}\n\n{COMPLIANCE_ITEMS}",
@@ -142,12 +165,10 @@ async def generate_report(
     else:
         rag = "GREEN"
 
-    # Return same structure as Streamlit _run_generation()
-    # part3 and part4 empty — matches Streamlit which also returns them as ""
     return {
         "part1": part1,
         "part2": part2,
-        "part3": "",
+        "part3": part3,
         "part4": "",
         "check_text": check_text,
         "passes": passes,

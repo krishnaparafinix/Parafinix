@@ -15,6 +15,7 @@ Logic and SQL operations are identical to the Streamlit reference.
 from fastapi import HTTPException, status
 from datetime import datetime
 from config import settings
+from services.supabase_client import get_anon_client, get_user_client
 
 
 def get_supabase_client(access_token: str | None = None):
