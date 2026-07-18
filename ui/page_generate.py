@@ -43,21 +43,38 @@ def _run_generation(cname, adviser_name, firm_name, basis, charges, report_ref, 
             f"Basis: {basis}\nCharges: {charges}\n\nNOTES:\n{notes}\n\n{FULL_REPORT_PROMPT}"
         )
 
-    status.write("Pass 1 of 2 — drafting circumstances, objectives, risk...")
-    progress.progress(20)
-    part1 = call_drafting_model(SYSTEM_PROMPT, p1_msg, max_tokens=6000)
-    progress.progress(48)
+    status.write("Pass 1 of 4 — drafting circumstances, objectives, risk...")
+    progress.progress(12)
+    part1 = call_drafting_model(SYSTEM_PROMPT, p1_msg, max_tokens=8000)
+    progress.progress(28)
 
-    status.write("Pass 2 of 2 — recommendations, alternatives, checks...")
+    status.write("Pass 2 of 4 — first recommendations...")
     p2_msg = (
         f"Client: {cname}\nAdviser: {adviser_name}\nFirm: {firm_name}\n\n"
         f"NOTES:\n{notes}\n\nSECTIONS 1-5:\n{part1[:3000]}\n\n{PASS2_PROMPT}"
     )
     part2 = call_drafting_model(SYSTEM_PROMPT, p2_msg, max_tokens=6000)
-    progress.progress(74)
+    progress.progress(46)
+
+    status.write("Pass 3 of 4 — remaining recommendations...")
+    p3_msg = (
+        f"Client: {cname}\nAdviser: {adviser_name}\nFirm: {firm_name}\n\n"
+        f"NOTES:\n{notes}\n\nSECTIONS 1-6 (FIRST HALF):\n{part2[:3000]}\n\n{PASS3_PROMPT}"
+    )
+    part3 = call_drafting_model(SYSTEM_PROMPT, p3_msg, max_tokens=6000)
+    progress.progress(64)
+
+    status.write("Pass 4 of 4 — costs, tax, risks, next steps...")
+    recs_so_far = part2 + "\n\n" + part3
+    p4_msg = (
+        f"Client: {cname}\nAdviser: {adviser_name}\nFirm: {firm_name}\n\n"
+        f"NOTES:\n{notes}\n\nALL RECOMMENDATIONS SO FAR:\n{recs_so_far[:3000]}\n\n{PASS4_PROMPT}"
+    )
+    part4 = call_drafting_model(SYSTEM_PROMPT, p4_msg, max_tokens=6000)
+    progress.progress(80)
 
     status.write("Running 28-point compliance review...")
-    combined = part1 + "\n\n" + part2
+    combined = part1 + "\n\n" + part2 + "\n\n" + part3 + "\n\n" + part4
     check_text = call_compliance_model(
         COMPLIANCE_SYSTEM,
         f"Report:\n{combined[:7000]}\n\n{COMPLIANCE_ITEMS}",
@@ -71,14 +88,13 @@ def _run_generation(cname, adviser_name, firm_name, basis, charges, report_ref, 
     fails  = sum(1 for l in check_text.split("\n") if "| FAIL" in l)
 
     return {
-        "part1": part1, "part2": part2, "check_text": check_text,
+        "part1": part1, "part2": part2, "part3": part3, "part4": part4,
+        "check_text": check_text,
         "passes": passes, "flags": flags, "fails": fails,
         "firm_name": firm_name, "adviser_name": adviser_name,
         "basis": basis, "charges": charges, "report_ref": report_ref,
         "notes": notes,
     }
-
-
 def render_generate_page():
     user = st.session_state.user
     cid  = st.session_state.active_client_id
