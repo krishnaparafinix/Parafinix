@@ -200,7 +200,7 @@ def build_suitability_doc(client_name, adviser_name, firm_name, basis,
     if part2: full_content += "\n\n" + part2
     if part3: full_content += "\n\n" + part3
     if part4: full_content += "\n\n" + part4
-    render_content(doc, full_content)
+    render_content(doc, full_content, page_break_sections=True)
     doc.add_page_break()
     _important_information(doc, firm_name)
     _add_page_numbers(doc, client_name, firm_name)

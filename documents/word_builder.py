@@ -18,7 +18,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import re
 
-# ── Colour palette ────────────────────────────────────────────
+# ── Colour palette ──────────────────────────────────────
 NAVY   = RGBColor(0x1F, 0x33, 0x46)
 TEAL   = RGBColor(0x1F, 0x7A, 0x6C)
 WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
@@ -27,7 +27,7 @@ RED_C  = RGBColor(0xC0, 0x39, 0x2B)
 AMBER  = RGBColor(0xB8, 0x86, 0x0B)
 GREEN  = RGBColor(0x2E, 0x7D, 0x52)
 
-# ── Cell background ───────────────────────────────────────────
+# ── Cell background ──────────────────────────────────────
 def set_cell_bg(cell, hex_color: str):
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
@@ -37,7 +37,7 @@ def set_cell_bg(cell, hex_color: str):
     shd.set(qn('w:fill'), hex_color)
     tcPr.append(shd)
 
-# ── Table builder ─────────────────────────────────────────────
+# ── Table builder ──────────────────────────────────────
 def add_real_table(doc, header_row: list, data_rows: list, header_color: str = '1F3346'):
     """Builds a properly formatted Word table from lists of strings."""
     num_cols = len(header_row)
@@ -48,7 +48,6 @@ def add_real_table(doc, header_row: list, data_rows: list, header_color: str = '
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
 
-    # Header row
     hdr = table.rows[0]
     hdr.height = Pt(18)
     for i, cell_text in enumerate(header_row):
@@ -62,7 +61,6 @@ def add_real_table(doc, header_row: list, data_rows: list, header_color: str = '
         run.font.size = Pt(10)
         run.font.color.rgb = WHITE
 
-    # Data rows — alternating shading
     for ri, row_data in enumerate(data_rows):
         row = table.rows[ri + 1]
         bg = 'FFFFFF' if ri % 2 == 0 else 'EEF2F5'
@@ -83,9 +81,7 @@ def add_real_table(doc, header_row: list, data_rows: list, header_color: str = '
             else:
                 _inline(p, txt, size=Pt(10))
 
-    # No trailing paragraph - the next heading/para provides visual separation
-
-# ── Markdown table parser ─────────────────────────────────────
+# ── Markdown table parser ──────────────────────────────────────
 def parse_md_tables(text: str) -> list:
     """
     Splits text into blocks: ('table', headers, rows) or ('text', line).
@@ -122,7 +118,7 @@ def parse_md_tables(text: str) -> list:
             i += 1
     return blocks
 
-# ── Divider line ──────────────────────────────────────────────
+# ── Divider line ──────────────────────────────────────
 def add_divider(doc, color: str = '1F3346', target_para=None):
     """
     Adds a bottom border. If target_para is given, applies the border
@@ -153,8 +149,10 @@ def add_divider(doc, color: str = '1F3346', target_para=None):
         pBdr.append(bot)
         pPr.append(pBdr)
 
-# ── Heading builder ───────────────────────────────────────────
-def add_heading(doc, text: str, level: int = 1):
+# ── Heading builder ──────────────────────────────────────
+def add_heading(doc, text: str, level: int = 1, page_break_before: bool = False):
+    if page_break_before:
+        doc.add_page_break()
     p = doc.add_paragraph()
     if level == 1:
         p.paragraph_format.space_before = Pt(16)
@@ -163,7 +161,6 @@ def add_heading(doc, text: str, level: int = 1):
         r.bold = True
         r.font.size = Pt(16)
         r.font.color.rgb = NAVY
-        # Apply divider border directly to heading — no extra paragraph needed
         pPr = p._p.get_or_add_pPr()
         pBdr = OxmlElement("w:pBdr")
         bot  = OxmlElement("w:bottom")
@@ -186,7 +183,7 @@ def add_heading(doc, text: str, level: int = 1):
         r.font.size = Pt(10.5)
         r.font.color.rgb = NAVY
 
-# ── Inline text with bold / MISSING handling ──────────────────
+# ── Inline text with bold / MISSING handling ──────────────────────────────────
 def _inline(p, text: str, size = None):
     """Renders inline markdown bold (**text**) and [MISSING:] markers."""
     if size is None:
@@ -206,19 +203,19 @@ def _inline(p, text: str, size = None):
             run = p.add_run(part)
             run.font.size = size
 
-# ── Body paragraph ────────────────────────────────────────────
+# ── Body paragraph ──────────────────────────────────────
 def _body_para(doc, text: str):
     """Standard justified body paragraph — the core prose style."""
     p = doc.add_paragraph()
     p.paragraph_format.alignment    = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.space_before = Pt(0)
     p.paragraph_format.space_after  = Pt(4)
-    p.paragraph_format.line_spacing = Pt(14.3)  # 1.15 × 12.5pt effective
+    p.paragraph_format.line_spacing = Pt(14.3)
     _inline(p, text)
     return p
 
-# ── Line renderer ─────────────────────────────────────────────
-def render_line(doc, line: str):
+# ── Line renderer ──────────────────────────────────────
+def render_line(doc, line: str, state: dict = None):
     """Converts a single line of AI markdown output into a Word element."""
     s = line.strip()
 
@@ -226,7 +223,10 @@ def render_line(doc, line: str):
         return
 
     if s.startswith('# '):
-        add_heading(doc, s[2:], 1)  # Divider is now built into H1 heading
+        pb = bool(state) and state.get('page_break_sections') and state.get('seen_h1')
+        add_heading(doc, s[2:], 1, page_break_before=pb)
+        if state is not None:
+            state['seen_h1'] = True
         return
 
     if s.startswith('## '):
@@ -238,7 +238,10 @@ def render_line(doc, line: str):
         return
 
     if 'PARAPLANNER CHECK' in s.upper() and not s.startswith('|'):
-        add_heading(doc, 'PARAPLANNER CHECK — ITEMS FOR VERIFICATION BEFORE SIGN-OFF', 2)
+        pb = bool(state) and state.get('page_break_sections') and state.get('seen_h1')
+        add_heading(doc, 'PARAPLANNER CHECK — ITEMS FOR VERIFICATION BEFORE SIGN-OFF', 2, page_break_before=pb)
+        if state is not None:
+            state['seen_h1'] = True
         return
 
     if s.startswith('[MISSING'):
@@ -281,28 +284,25 @@ def render_line(doc, line: str):
         _inline(p, s)
         return
 
-    # Standard body paragraph — justified
     _body_para(doc, s)
 
 
-# ── Full content renderer ─────────────────────────────────────
-def render_content(doc, text: str):
+# ── Full content renderer ──────────────────────────────────────
+def render_content(doc, text: str, page_break_sections: bool = False):
     """
     Renders an entire AI-generated markdown text block into the document.
     Tables become real Word tables.
-    Empty lines are COMPLETELY SKIPPED — all visual spacing comes from
-    the space_before/space_after set on each heading and body paragraph.
-    This eliminates the large gaps that appear when blank lines create
-    extra empty paragraphs stacked on top of paragraph spacing.
+    If page_break_sections=True, each new top-level section (# heading)
+    and the Paraplanner Check start on a fresh page.
     """
     blocks = parse_md_tables(text)
+    state = {'seen_h1': False, 'page_break_sections': page_break_sections}
     for block in blocks:
         if block[0] == 'table':
             _, header_row, data_rows = block
             add_real_table(doc, header_row, data_rows)
         else:
             _, line = block
-            # Skip ALL blank lines — spacing is purely from paragraph formatting
             if not line.strip() or line.strip() == '---':
                 continue
-            render_line(doc, line)
+            render_line(doc, line, state)
