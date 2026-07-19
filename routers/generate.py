@@ -1,11 +1,9 @@
 """
-routers/generate.py — AI generation endpoints.
-
 Suitability report uses 3-pass generation to ensure complete output:
   Pass 1: Sections 1-5 (8000 tokens)
-  Pass 2: All of Section 6 - recommendations (8000 tokens)  
+  Pass 2: All of Section 6 - recommendations (8000 tokens)
   Pass 3: Sections 7-11 + Paraplanner Check (6000 tokens)
-  Compliance: 28-point COBS 9A review (2500 tokens)
+  Compliance: 28-point COBS 9A review (independent endpoint, full report text)
 
 This matches the quality and structure of the reference Anurag report,
 with increased tokens to prevent the mid-section cutoff.
@@ -46,6 +44,13 @@ class GenerateReportRequest(BaseModel):
     template_text: Optional[str] = ""
 
 
+class GenerateComplianceRequest(BaseModel):
+    part1: str
+    part2: str
+    part3: Optional[str] = ""
+    part4: Optional[str] = ""
+
+
 @router.post("/preflight")
 async def preflight(
     body: PreflightRequest,
@@ -72,6 +77,52 @@ async def extract(
     return {"data": data, "flags": flags}
 
 
+def _run_compliance_check(combined: str) -> dict:
+    """
+    Runs the 28-point COBS 9A compliance review against the FULL report text.
+    No truncation — a truncated input causes the model to falsely FAIL items
+    (assets, pensions, recommendations) that actually exist later in the report.
+    """
+    check_text = call_compliance_model(
+        COMPLIANCE_SYSTEM,
+        f"Report:\n{combined}\n\n{COMPLIANCE_ITEMS}",
+        max_tokens=4000,
+    )
+    passes = sum(1 for l in check_text.split("\n") if "| PASS" in l)
+    flags  = sum(1 for l in check_text.split("\n") if "| FLAG" in l)
+    fails  = sum(1 for l in check_text.split("\n") if "| FAIL" in l)
+
+    if fails > 2:
+        rag = "RED"
+    elif flags > 5 or fails > 0:
+        rag = "AMBER"
+    else:
+        rag = "GREEN"
+
+    return {
+        "check_text": check_text,
+        "passes": passes,
+        "flags": flags,
+        "fails": fails,
+        "rag_rating": rag,
+    }
+
+
+@router.post("/compliance")
+async def generate_compliance(
+    body: GenerateComplianceRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Runs the compliance review independently of /generate/report — pass in
+    an already-generated report's parts (from /generate/report's response,
+    or from a saved case) to re-run or refresh the compliance check without
+    regenerating the whole suitability report.
+    """
+    combined = f"{body.part1}\n\n{body.part2}\n\n{body.part3}\n\n{body.part4}"
+    return _run_compliance_check(combined)
+
+
 @router.post("/report")
 async def generate_report(
     body: GenerateReportRequest,
@@ -96,7 +147,7 @@ async def generate_report(
       - Product information, charges, tax, risks, next steps
       - Paraplanner verification checklist
 
-    Compliance (2500 tokens): 28-point COBS 9A review
+    Compliance runs automatically against the full combined text.
     """
     notes   = body.notes
     cname   = body.client_name
@@ -119,13 +170,14 @@ async def generate_report(
         p1_msg = (
             f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n"
             f"Basis: {basis}\nCharges: {charges}\n\nNOTES:\n{notes}\n\n"
-            f"{FULL_REPORT_PROMPT}"
+            f"{FULL_REPORT_PROMPT}\n\n"
+            f"IMPORTANT: Do NOT include a [PARAPLANNER CHECK] section in this pass. "
+            f"That will be added later, after all sections are complete. "
+            f"Stop cleanly and completely after Section 5 with no further content."
         )
     part1 = call_drafting_model(SYSTEM_PROMPT, p1_msg, max_tokens=8000)
 
     # ── PASS 2: All of Section 6 — Recommendations ───────────
-    # Increased to 8000 tokens to fit all recommendations without cutoff
-    # Uses full PASS2_PROMPT which covers ALL recommendations (not just first half)
     p2_msg = (
         f"Client: {cname}\nAdviser: {adviser}\nFirm: {firm}\n\n"
         f"NOTES:\n{notes}\n\n"
@@ -146,35 +198,20 @@ async def generate_report(
     )
     part3 = call_drafting_model(SYSTEM_PROMPT, p3_msg, max_tokens=6000)
 
-    # ── COMPLIANCE CHECK ─────────────────────────────────────
+    # ── COMPLIANCE CHECK ──────────────────────────────────────
     combined = f"{part1}\n\n{part2}\n\n{part3}"
-    check_text = call_compliance_model(
-        COMPLIANCE_SYSTEM,
-        f"Report:\n{combined[:7000]}\n\n{COMPLIANCE_ITEMS}",
-        max_tokens=2500,
-    )
-
-    passes = sum(1 for l in check_text.split("\n") if "| PASS" in l)
-    flags  = sum(1 for l in check_text.split("\n") if "| FLAG" in l)
-    fails  = sum(1 for l in check_text.split("\n") if "| FAIL" in l)
-
-    if fails > 2:
-        rag = "RED"
-    elif flags > 5 or fails > 0:
-        rag = "AMBER"
-    else:
-        rag = "GREEN"
+    compliance_result = _run_compliance_check(combined)
 
     return {
         "part1": part1,
         "part2": part2,
         "part3": part3,
         "part4": "",
-        "check_text": check_text,
-        "passes": passes,
-        "flags": flags,
-        "fails": fails,
-        "rag_rating": rag,
+        "check_text": compliance_result["check_text"],
+        "passes": compliance_result["passes"],
+        "flags": compliance_result["flags"],
+        "fails": compliance_result["fails"],
+        "rag_rating": compliance_result["rag_rating"],
         "adviser_name": adviser,
         "firm_name": firm,
         "basis": basis,
