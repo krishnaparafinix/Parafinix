@@ -47,13 +47,24 @@ def create_client_folder(user_id: str, client_name: str):
         st.error(f"Could not create client folder: {e}")
         return None
 
-def delete_client_folder(client_id: str) -> bool:
+def get_client_by_id(client_id: str) -> dict:
     _restore_session()
     try:
-        get_supabase().table("clients").delete().eq("id", client_id).execute()
+        res = get_supabase().table("clients").select("*").eq("id", client_id).single().execute()
+        return res.data or {}
+    except Exception:
+        return {}
+
+def update_client_fact_find(client_id: str, data: dict, notes: str) -> bool:
+    """Persists extracted/edited fact-find data permanently on the client record."""
+    _restore_session()
+    try:
+        get_supabase().table("clients").update({
+            "fact_find_data": data, "fact_find_notes": notes
+        }).eq("id", client_id).execute()
         return True
     except Exception as e:
-        st.error(f"Could not delete client: {e}")
+        st.error(f"Could not save client details: {e}")
         return False
 
 # ── CASES (generated reports) ────────────────────────────────

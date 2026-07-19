@@ -11,8 +11,8 @@ Flow:
 import streamlit as st
 import json
 from core.fact_find import extract_fact_find, fact_find_to_notes
+from core.database import update_client_fact_find, get_client_by_id
 
-# ── Helper: render an editable field ─────────────────────────
 def _field(label: str, value: str, key: str, height: int = None) -> str:
     """Renders an editable input and returns the current value."""
     placeholder = "Not found in notes"
@@ -46,6 +46,13 @@ def render_factfind_page():
 
     st.markdown("---")
 
+    # Auto-load saved details if this client already has them
+    if "_ff_data" not in st.session_state:
+        client_record = get_client_by_id(cid)
+        if client_record.get("fact_find_data"):
+            st.session_state._ff_data = client_record["fact_find_data"]
+            st.session_state._ff_notes = client_record.get("fact_find_notes", "")
+
     # ── STEP 1: input — PDF upload OR paste notes ──
     if not st.session_state.get("_ff_data"):
         st.markdown("#### Step 1 — Provide client information")
@@ -54,7 +61,6 @@ def render_factfind_page():
             "and/or paste meeting notes. The AI extracts ~60 fields from whatever you provide."
         )
 
-        # Input method tabs
         tab_pdf, tab_text, tab_both = st.tabs([
             "Upload PDF(s)",
             "Paste notes",
@@ -131,7 +137,6 @@ def render_factfind_page():
             if additional_notes.strip():
                 manual_text = additional_notes
 
-        # Combine all sources
         combined_input = ""
         if pdf_text.strip():
             combined_input += pdf_text.strip()
@@ -166,13 +171,13 @@ def render_factfind_page():
                 return
             st.session_state._ff_data = data
             st.session_state._ff_notes = combined_input
+            update_client_fact_find(cid, data, combined_input)
             st.rerun()
         return
 
     # ── STEP 2: review and edit extracted data ──
     data = st.session_state._ff_data
 
-    # Flags at the top — most important
     flags = [f for f in data.get("flags", []) if f and f.strip()]
     if flags:
         st.markdown("#### ⚠️ Items to check before generating")
@@ -187,7 +192,6 @@ def render_factfind_page():
     st.caption("Every field is editable. Correct anything the AI got wrong or missed. Empty fields were not found in your notes.")
     st.markdown("")
 
-    # ── PERSONAL ──
     _section("Personal Details", "👤")
     p = data.get("personal", {})
     c1, c2 = st.columns(2)
@@ -204,7 +208,6 @@ def render_factfind_page():
     p["address"]        = _field("Address", p.get("address"), "ff_addr")
     p["marital_status"] = _field("Marital status", p.get("marital_status"), "ff_marital")
 
-    # Dependants
     st.markdown("**Dependants**")
     deps = p.get("dependants", [{}])
     if not deps:
@@ -223,7 +226,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── INCOME ──
     _section("Income", "💷")
     inc = data.get("income", {})
     c1, c2 = st.columns(2)
@@ -249,7 +251,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── ASSETS ──
     _section("Assets & Savings", "🏦")
     assets = data.get("assets", {})
     c1, c2, c3 = st.columns(3)
@@ -300,7 +301,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── PENSIONS ──
     _section("Pensions", "🏛️")
     pensions = data.get("pensions", [{}])
     new_pensions = []
@@ -329,7 +329,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── PROTECTION ──
     _section("Protection", "🛡️")
     prots = data.get("protection", [{}])
     new_prots = []
@@ -353,7 +352,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── LIABILITIES ──
     _section("Liabilities", "🏠")
     liab = data.get("liabilities", {})
     lc1, lc2, lc3 = st.columns(3)
@@ -370,7 +368,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── OBJECTIVES ──
     _section("Objectives", "🎯")
     obj = data.get("objectives", {})
     obj["primary_objective"] = _field("Primary objective", obj.get("primary_objective"), "ff_obj_primary", height=80)
@@ -388,7 +385,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── RISK ──
     _section("Attitude to Risk & Capacity for Loss", "📊")
     risk = data.get("risk", {})
     rc1, rc2, rc3 = st.columns(3)
@@ -405,7 +401,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── ESTATE PLANNING ──
     _section("Estate Planning", "📋")
     ep = data.get("estate_planning", {})
     ec1, ec2 = st.columns(2)
@@ -421,7 +416,6 @@ def render_factfind_page():
 
     st.markdown("")
 
-    # ── TAX ──
     _section("Tax Position", "💼")
     tax = data.get("tax", {})
     tc1, tc2, tc3 = st.columns(3)
@@ -440,7 +434,6 @@ def render_factfind_page():
 
     st.markdown("---")
 
-    # ── Confirm and generate ──
     st.markdown("#### Step 3 — Confirm and generate")
     st.caption("Once you're happy with the data above, click Confirm and Generate. The report will be produced from the verified information.")
 
@@ -448,17 +441,22 @@ def render_factfind_page():
     if remaining_flags:
         st.warning(f"{len(remaining_flags)} item(s) still flagged above — review them before generating if possible.")
 
-    btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
+    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([2, 1, 1, 1])
     with btn_col2:
+        if st.button("Save details", use_container_width=True):
+            update_client_fact_find(cid, data, fact_find_to_notes(data))
+            st.success("Saved to client profile.")
+    with btn_col3:
         if st.button("Start over", use_container_width=True):
             st.session_state.pop("_ff_data", None)
             st.session_state.pop("_ff_notes", None)
             st.rerun()
-    with btn_col3:
+    with btn_col4:
         confirm = st.button("Confirm & Generate Report", type="primary", use_container_width=True)
 
     if confirm:
         structured_notes = fact_find_to_notes(data)
+        update_client_fact_find(cid, data, structured_notes)
         st.session_state._ff_confirmed_data  = data
         st.session_state._ff_structured_notes = structured_notes
         st.session_state._show_ff_outputs = True
