@@ -6,6 +6,7 @@ import StatCard from '../components/StatCard'
 import ClientCard from '../components/ClientCard'
 import Button from '../components/Button'
 import Card from '../components/Card'
+import ChatWidget from '../components/ChatWidget'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -75,6 +76,8 @@ export default function Dashboard() {
           onCreated={() => { setShowAdd(false); load() }}
         />
       )}
+
+      <ChatWidget />
     </div>
   )
 }
