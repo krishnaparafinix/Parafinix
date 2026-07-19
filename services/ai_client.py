@@ -13,7 +13,6 @@ from openai import OpenAI
 from fastapi import HTTPException, status
 from config import settings
 
-# Single client instance — created once at module import (equivalent to st.cache_resource)
 _ai_client = OpenAI(
     base_url="https://api.meshapi.ai/v1",
     api_key=settings.MESH_API_KEY,
@@ -64,4 +63,28 @@ def call_compliance_model(system_prompt: str, user_prompt: str, max_tokens: int 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI compliance model failed: {str(e)}",
+        )
+
+
+def call_chat_agent(messages: list, tools: list = None, max_tokens: int = 1500):
+    """
+    Calls the assistant model with optional tool-calling support, for the
+    dashboard AI chat agent. Returns the raw message object (not just the
+    text) so the caller can inspect both `.content` and `.tool_calls`.
+    """
+    try:
+        kwargs = {
+            "model": MODEL_COMPLIANCE,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        response = _ai_client.chat.completions.create(**kwargs)
+        return response.choices[0].message
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI chat agent failed: {str(e)}",
         )
