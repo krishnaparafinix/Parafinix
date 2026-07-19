@@ -25,7 +25,7 @@ def _restore_session():
         except Exception:
             pass
 
-# ── CLIENTS ──────────────────────────────────────────────────
+# ── CLIENTS ──────────────────────────────────────
 def get_clients(user_id: str) -> list:
     _restore_session()
     try:
@@ -47,6 +47,15 @@ def create_client_folder(user_id: str, client_name: str):
         st.error(f"Could not create client folder: {e}")
         return None
 
+def delete_client_folder(client_id: str) -> bool:
+    _restore_session()
+    try:
+        get_supabase().table("clients").delete().eq("id", client_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Could not delete client: {e}")
+        return False
+
 def get_client_by_id(client_id: str) -> dict:
     _restore_session()
     try:
@@ -67,7 +76,7 @@ def update_client_fact_find(client_id: str, data: dict, notes: str) -> bool:
         st.error(f"Could not save client details: {e}")
         return False
 
-# ── CASES (generated reports) ────────────────────────────────
+# ── CASES (generated reports) ──────────────────────────────────────
 def get_cases(client_id: str) -> list:
     _restore_session()
     try:
@@ -135,7 +144,7 @@ def delete_case(case_id: str) -> bool:
         st.error(f"Could not delete report: {e}")
         return False
 
-# ── DASHBOARD STATS ──────────────────────────────────────────
+# ── DASHBOARD STATS ──────────────────────────────────────
 def get_user_stats(user_id: str) -> dict:
     """Counts for the dashboard: clients, total reports, reports this
     month, and reports pending review."""
@@ -154,7 +163,7 @@ def get_user_stats(user_id: str) -> dict:
         pass
     return stats
 
-# ── ADMIN ────────────────────────────────────────────────────
+# ── ADMIN ──────────────────────────────────────────
 def admin_get_all_profiles() -> list:
     _restore_session()
     try:
