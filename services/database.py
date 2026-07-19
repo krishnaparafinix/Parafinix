@@ -40,6 +40,20 @@ def get_clients(user_id: str, access_token: str) -> list:
         raise HTTPException(status_code=500, detail=f"Could not load clients: {e}")
 
 
+def get_client_by_id(client_id: str, user_id: str, access_token: str):
+    """
+    Single indexed lookup instead of fetching every client the user owns
+    and filtering in Python (was the previous behaviour in get_client()).
+    """
+    db = get_supabase_client(access_token)
+    try:
+        res = db.table("clients").select("*") \
+            .eq("id", client_id).eq("user_id", user_id).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not load client: {e}")
+
+
 def create_client_folder(user_id: str, client_name: str, access_token: str):
     db = get_supabase_client(access_token)
     try:
@@ -70,6 +84,27 @@ def get_cases(client_id: str, access_token: str) -> list:
         return res.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not load cases: {e}")
+
+
+def get_cases_for_clients(client_ids: list, access_token: str) -> dict:
+    """
+    Returns {client_id: [cases...]} for every id in client_ids, fetched in a
+    single query instead of one query per client (was an N+1 in _enrich()
+    and list_all_cases() — the main dashboard-load slowness).
+    Each client's case list stays sorted newest-first.
+    """
+    grouped = {cid: [] for cid in client_ids}
+    if not client_ids:
+        return grouped
+    db = get_supabase_client(access_token)
+    try:
+        res = db.table("cases").select("*") \
+            .in_("client_id", client_ids).order("created_at", desc=True).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not load cases: {e}")
+    for case in res.data or []:
+        grouped.setdefault(case["client_id"], []).append(case)
+    return grouped
 
 
 def get_case(case_id: str, access_token: str):

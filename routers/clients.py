@@ -43,9 +43,10 @@ class UpdateClientRequest(BaseModel):
 
 
 def _enrich(clients: list, token: str) -> list:
+    cases_by_client = db.get_cases_for_clients([c["id"] for c in clients], token)
     enriched = []
     for c in clients:
-        cases = db.get_cases(c["id"], token)
+        cases = cases_by_client.get(c["id"], [])
         c["case_count"] = len(cases)
         c["latest_rag"] = cases[0].get("rag_rating", "") if cases else ""
         c["latest_status"] = cases[0].get("status", "") if cases else ""
@@ -61,6 +62,15 @@ async def list_clients(
     token = _token(request)
     clients = db.get_clients(user.user_id, token)
     return {"clients": _enrich(clients, token)}
+
+
+@router.get("/stats")
+async def get_dashboard_stats(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Per-user dashboard counters (clients / reports / this month / pending review) in 2 queries flat."""
+    return db.get_user_stats(user.user_id, _token(request))
 
 
 @router.post("")
@@ -94,8 +104,7 @@ async def get_client(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     token = _token(request)
-    clients = db.get_clients(user.user_id, token)
-    client = next((c for c in clients if c["id"] == client_id), None)
+    client = db.get_client_by_id(client_id, user.user_id, token)
     if not client:
         raise HTTPException(404, "Client not found.")
     cases = db.get_cases(client_id, token)

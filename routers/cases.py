@@ -48,9 +48,10 @@ async def list_all_cases(
 ):
     token = _token(request)
     clients = db.get_clients(user.user_id, token)
+    cases_by_client = db.get_cases_for_clients([c["id"] for c in clients], token)
     all_cases = []
     for client in clients:
-        cases = db.get_cases(client["id"], token)
+        cases = cases_by_client.get(client["id"], [])
         for case in cases:
             case["client_name"] = client.get("client_name", "")
         all_cases.extend(cases)
