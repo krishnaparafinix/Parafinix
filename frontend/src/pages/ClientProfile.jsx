@@ -1,31 +1,35 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getClient, deleteClient } from '../api/clients'
-import { saveCase, deleteCase, updateCaseStatus } from '../api/cases'
-import { uploadPdf, extractFactFind, generateReport } from '../api/generate'
-import { downloadFactFindDoc, downloadSuitabilityDoc, downloadComplianceDoc } from '../api/documents'
+import { getClient } from '../api/clients'
+import { saveCase } from '../api/cases'
+import { generateReport } from '../api/generate'
+import { rerunCompliance } from '../api/aiChat'
+import { downloadFactFindDoc, downloadSuitabilityDoc } from '../api/documents'
 import { loadFactFind, saveFactFind } from '../lib/localFactFind'
 import { factFindToNotes } from '../lib/factFindToNotes'
-import { useTimedStages } from '../lib/useTimedStages'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { nextStatus, statusStyle } from '../lib/rag'
-import Card from '../components/Card'
-import Button from '../components/Button'
-import RAGBadge from '../components/RAGBadge'
-import StatusBadge from '../components/StatusBadge'
-import FlagCallout from '../components/FlagCallout'
-import FileUploadZone from '../components/FileUploadZone'
-import ConfirmModal from '../components/ConfirmModal'
-import ProgressPipeline from '../components/ProgressPipeline'
+import { color, font, docAccent } from '../lib/theme'
+import { formatDate, reportStatusBadge } from '../lib/format'
+import Topbar from '../components/layout/Topbar'
+import PageContainer from '../components/layout/PageContainer'
+import Avatar from '../components/ui/Avatar'
+import GenerateModal from '../components/GenerateModal'
+import FactFindDrawer from '../components/FactFindDrawer'
+import FactFindEntryModal from '../components/FactFindEntryModal'
+import EditClientModal from '../components/EditClientModal'
+import ChatWidget from '../components/ChatWidget'
 
-const GENERATE_STAGES = [
-  'Pass 1 of 3 — drafting client circumstances & objectives…',
-  'Pass 2 of 3 — drafting recommendations…',
-  'Pass 3 of 3 — drafting next steps & paraplanner check…',
-  'Running the 28-point compliance review…',
+function formatMoney(v) {
+  if (v === null || v === undefined || v === '') return '—'
+  return '£' + Number(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+}
+
+const DOC_CARDS = [
+  { key: 'factfind', code: 'FF', title: 'Fact-Find', desc: 'Structured data extraction' },
+  { key: 'suitability', code: 'SR', title: 'Suitability Report', desc: 'Full advised recommendation', hero: true },
+  { key: 'compliance', code: 'CR', title: 'Compliance Report', desc: 'FCA-aligned review' },
 ]
-const GENERATE_DURATIONS = [34000, 34000, 24000, 16000]
 
 export default function ClientProfile() {
   const { clientId } = useParams()
@@ -36,497 +40,328 @@ export default function ClientProfile() {
   const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [factFind, setFactFind] = useState(() => loadFactFind(clientId))
+  const [factFind, setFactFind] = useState(null)
 
-  const [entryMode, setEntryMode] = useState(null) // 'paste' | 'upload'
-  const [notesInput, setNotesInput] = useState('')
-  const [extracting, setExtracting] = useState(false)
-  const [extractError, setExtractError] = useState('')
-
-  const [reportMeta, setReportMeta] = useState({ adviser_name: '', firm_name: '', basis: 'Independent', charges: '', report_ref: '' })
-  const [generating, setGenerating] = useState(false)
+  const [showDrawer, setShowDrawer] = useState(false)
+  const [showEntry, setShowEntry] = useState(false)
+  const [entryThen, setEntryThen] = useState(null) // 'factfind-download' | null — chains into the FF generate flow
+  const [showEdit, setShowEdit] = useState(false)
+  const [activeGenerate, setActiveGenerate] = useState(null)
   const [generateError, setGenerateError] = useState('')
-  const [confirmGenerate, setConfirmGenerate] = useState(false)
-  const [viewingCase, setViewingCase] = useState(null)
-  const [deletingClient, setDeletingClient] = useState(false)
-  const [downloadError, setDownloadError] = useState('')
+  const [newRowId, setNewRowId] = useState(null)
 
-  const runDownload = (fn) => async () => {
-    setDownloadError('')
-    try {
-      await fn()
-    } catch (err) {
-      setDownloadError(apiErrorMessage(err, 'Could not generate that document. Please try again.'))
-    }
-  }
-
-  const stageIndex = useTimedStages(generating, GENERATE_DURATIONS)
-
-  const loadClient = () => {
+  const load = () => {
     setLoading(true)
     setError('')
-    // getClient() already embeds this client's cases — no need for a second,
-    // fully redundant GET /clients/{id}/cases call on top of it.
     getClient(clientId)
-      .then((clientData) => {
-        setClient(clientData)
-        setCases(clientData.cases || [])
-      })
+      .then((data) => { setClient(data); setCases(data.cases || []) })
       .catch((err) => setError(apiErrorMessage(err, 'Could not load this client.')))
       .finally(() => setLoading(false))
   }
 
-  useEffect(loadClient, [clientId])
+  useEffect(load, [clientId])
+  useEffect(() => { setFactFind(loadFactFind(clientId)) }, [clientId])
 
-  // clientId can change without unmounting (e.g. browser back/forward between
-  // two client profiles), so re-read localStorage explicitly rather than
-  // relying on the useState initializer, which only runs on first mount.
-  useEffect(() => {
-    setFactFind(loadFactFind(clientId))
-  }, [clientId])
+  const latestCase = cases[0] || null
 
-  useEffect(() => {
-    setReportMeta((m) => ({
-      ...m,
-      adviser_name: m.adviser_name || user?.full_name || '',
-      firm_name: m.firm_name || user?.firm_name || '',
-    }))
-  }, [user])
-
-  const flags = factFind?.flags || []
-
-  const summary = useMemo(() => {
-    if (!factFind?.data) return null
-    const p = factFind.data.personal || {}
-    const obj = factFind.data.objectives || {}
+  const keyFacts = useMemo(() => {
+    const p = factFind?.data?.personal
+    const risk = factFind?.data?.risk
+    const obj = factFind?.data?.objectives
     return {
-      names: [p.client1_name, p.client2_name].filter(Boolean).join(' & ') || 'Unnamed client',
-      employment: [p.client1_employment, p.client2_employment].filter(Boolean).join(' / ') || '—',
-      objective: obj.primary_objective || '—',
-      flagCount: flags.length,
+      dob: p?.client1_dob || '—',
+      risk: risk?.profile_assigned || '—',
+      objective: obj?.primary_objective || '—',
     }
-  }, [factFind, flags])
+  }, [factFind])
 
-  const runExtract = async (notes) => {
-    setExtracting(true)
-    setExtractError('')
-    try {
-      const { data, flags: extractedFlags } = await extractFactFind(notes)
-      saveFactFind(clientId, { data, flags: extractedFlags })
-      navigate(`/clients/${clientId}/fact-find`)
-    } catch (err) {
-      setExtractError(apiErrorMessage(err, 'Extraction failed. Please try again.'))
-    } finally {
-      setExtracting(false)
+  const handleExtracted = ({ data, flags }) => {
+    saveFactFind(clientId, { data, flags })
+    setFactFind(loadFactFind(clientId))
+    setShowEntry(false)
+    if (entryThen === 'factfind-download') {
+      setEntryThen(null)
+      setActiveGenerate('factfind')
     }
   }
 
-  const handlePdfUpload = async (file) => {
-    setExtracting(true)
-    setExtractError('')
-    try {
-      const uploaded = await uploadPdf(file)
-      if (!uploaded.success || !uploaded.extracted_text?.trim()) {
-        throw new Error('Could not read any text from that PDF. Try pasting the notes instead.')
-      }
-      await runExtract(uploaded.extracted_text)
-    } catch (err) {
-      setExtractError(apiErrorMessage(err, 'Upload failed. Please try again.'))
-      setExtracting(false)
-    }
+  const runSuitability = async () => {
+    const notes = factFindToNotes(factFind.data)
+    const result = await generateReport({
+      client_name: client.client_name,
+      adviser_name: user?.full_name || '',
+      firm_name: user?.firm_name || '',
+      basis: 'Independent',
+      charges: '',
+      report_ref: '',
+      notes,
+    })
+    const saved = await saveCase(clientId, {
+      case_title: `${client.client_name} — Suitability Report`,
+      fact_find: notes,
+      report_part1: result.part1,
+      report_part2: result.part2,
+      report_part3: result.part3,
+      report_part4: result.part4,
+      compliance_result: result.check_text,
+      rag_rating: result.rag_rating,
+      passes: result.passes,
+      flags: result.flags,
+      fails: result.fails,
+      firm_name: user?.firm_name || '',
+      adviser_name: user?.full_name || '',
+      basis: 'Independent',
+      status: 'draft',
+    })
+    setCases((prev) => [saved, ...prev])
+    setNewRowId(saved.id)
+    return saved
   }
 
-  const doGenerate = async () => {
-    setConfirmGenerate(false)
-    setGenerating(true)
+  const runCompliance = async () => {
+    const result = await rerunCompliance(latestCase.id)
+    setCases((prev) => prev.map((c) => (c.id === latestCase.id ? { ...c, compliance_result: result.check_text, passes: result.passes, flags: result.flags, fails: result.fails, rag_rating: result.rag_rating } : c)))
+    setNewRowId(latestCase.id)
+    return result
+  }
+
+  const runFactFindDoc = async () => {
+    await downloadFactFindDoc({
+      client_name: client.client_name,
+      adviser_name: user?.full_name || '',
+      firm_name: user?.firm_name || '',
+      fact_find_data: factFind.data,
+      client_facing: false,
+    })
+    return {}
+  }
+
+  const handleGenerateClick = (key) => {
     setGenerateError('')
-    try {
-      const notes = factFindToNotes(factFind.data)
-      const result = await generateReport({
-        client_name: client.client_name,
-        adviser_name: reportMeta.adviser_name,
-        firm_name: reportMeta.firm_name,
-        basis: reportMeta.basis,
-        charges: reportMeta.charges,
-        report_ref: reportMeta.report_ref,
-        notes,
-      })
-      const saved = await saveCase(clientId, {
-        case_title: `${client.client_name} — Suitability Report`,
-        fact_find: notes,
-        report_part1: result.part1,
-        report_part2: result.part2,
-        report_part3: result.part3,
-        report_part4: result.part4,
-        compliance_result: result.check_text,
-        rag_rating: result.rag_rating,
-        passes: result.passes,
-        flags: result.flags,
-        fails: result.fails,
-        firm_name: reportMeta.firm_name,
-        adviser_name: reportMeta.adviser_name,
-        basis: reportMeta.basis,
-        charges: reportMeta.charges,
-        report_ref: reportMeta.report_ref,
-        status: 'draft',
-      })
-      setCases((prev) => [saved, ...prev])
-    } catch (err) {
-      setGenerateError(apiErrorMessage(err, 'Report generation failed. Please try again.'))
-    } finally {
-      setGenerating(false)
+    if (key === 'factfind') {
+      if (!factFind) { setEntryThen('factfind-download'); setShowEntry(true); return }
+      setActiveGenerate('factfind')
+      return
+    }
+    if (key === 'suitability') {
+      if (!factFind) { setGenerateError('Add fact-find data before generating a Suitability Report.'); return }
+      setActiveGenerate('suitability')
+      return
+    }
+    if (key === 'compliance') {
+      if (!latestCase) { setGenerateError('Generate a Suitability Report first — compliance reruns against the latest report on file.'); return }
+      setActiveGenerate('compliance')
     }
   }
 
-  const handleGenerateClick = () => {
-    if (flags.length > 0) setConfirmGenerate(true)
-    else doGenerate()
+  const taskFor = (key) => {
+    if (key === 'factfind') return runFactFindDoc
+    if (key === 'suitability') return runSuitability
+    return runCompliance
   }
 
-  const handleDeleteClient = async () => {
-    if (!confirm(`Delete ${client.client_name} and all associated reports? This cannot be undone.`)) return
-    setDeletingClient(true)
-    try {
-      await deleteClient(clientId)
-      navigate('/')
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Could not delete client.'))
-      setDeletingClient(false)
-    }
+  const titleFor = (key) => DOC_CARDS.find((d) => d.key === key)?.title || ''
+  const subtitleFor = (key) => {
+    if (key === 'factfind') return { running: 'Building the fact-find document…', done: 'Downloaded to your device.' }
+    if (key === 'suitability') return { running: 'AI is reading your notes and drafting…', done: 'Drafted from notes + fact-find · added to history.' }
+    return { running: 'Rerunning the 28-point compliance check…', done: 'Compliance rating updated on the latest report.' }
   }
 
-  if (loading) return <p className="text-sm text-text-secondary">Loading client…</p>
-  if (error) return <Card className="border-red/30 bg-red/5 text-sm text-red">{error}</Card>
+  if (loading) return <div style={{ padding: 34, color: color.textFaint, fontSize: 13 }}>Loading client…</div>
+  if (error) return <div style={{ padding: 34 }}><div style={{ background: 'rgba(199,57,57,0.08)', border: '1px solid rgba(199,57,57,0.3)', borderRadius: 12, padding: 16, fontSize: 13, color: '#e08787' }}>{error}</div></div>
   if (!client) return null
 
+  const isActiveClient = cases.length > 0
+  const slug = client.client_name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <button onClick={() => navigate('/')} className="mb-2 text-sm text-text-secondary hover:text-navy">← Back to dashboard</button>
-          <h1 className="text-2xl font-bold text-navy">{client.client_name}</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            {client.email || 'No email on file'}{client.phone ? ` · ${client.phone}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {client.latest_rag && <RAGBadge rag={client.latest_rag} />}
-          <Button variant="danger" size="sm" onClick={handleDeleteClient} loading={deletingClient}>Delete client</Button>
-        </div>
-      </div>
-
-      {/* A. Client details block */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold text-navy">Client details</h2>
-        {summary ? (
-          <Card>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">Client(s)</p>
-                <p className="mt-1 font-medium text-navy">{summary.names}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">Employment</p>
-                <p className="mt-1 font-medium text-navy">{summary.employment}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">Primary objective</p>
-                <p className="mt-1 font-medium text-navy">{summary.objective}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">Flags</p>
-                <p className={`mt-1 font-medium ${summary.flagCount > 0 ? 'text-amber' : 'text-emerald'}`}>
-                  {summary.flagCount > 0 ? `${summary.flagCount} to review` : 'None'}
-                </p>
-              </div>
-            </div>
-            <div className="mt-5 border-t border-border pt-4">
-              <Button variant="outline" size="sm" onClick={() => navigate(`/clients/${clientId}/fact-find`)}>
-                View / edit full details
-              </Button>
-            </div>
-          </Card>
-        ) : (
-          <FactFindEntryPrompt
-            navigate={navigate}
-            clientId={clientId}
-            entryMode={entryMode}
-            setEntryMode={setEntryMode}
-            notesInput={notesInput}
-            setNotesInput={setNotesInput}
-            extracting={extracting}
-            extractError={extractError}
-            onPaste={() => runExtract(notesInput)}
-            onUpload={handlePdfUpload}
-          />
-        )}
-      </section>
-
-      {/* B. Generate documents block */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold text-navy">Generate documents</h2>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card>
-            <h3 className="font-semibold text-navy">Fact-Find Document</h3>
-            <p className="mt-1 text-sm text-text-secondary">
-              {summary ? 'Download the fact-find using the saved details.' : 'No details saved yet — this downloads a blank template.'}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={runDownload(() => downloadFactFindDoc({
-                  client_name: client.client_name,
-                  adviser_name: reportMeta.adviser_name,
-                  firm_name: reportMeta.firm_name,
-                  fact_find_data: factFind?.data || {},
-                  client_facing: false,
-                }))}
-              >
-                Internal copy
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={runDownload(() => downloadFactFindDoc({
-                  client_name: client.client_name,
-                  adviser_name: reportMeta.adviser_name,
-                  firm_name: reportMeta.firm_name,
-                  fact_find_data: factFind?.data || {},
-                  client_facing: true,
-                }))}
-              >
-                Client copy
-              </Button>
-            </div>
-            {downloadError && <p className="mt-3 text-sm text-red">{downloadError}</p>}
-          </Card>
-
-          <Card>
-            <h3 className="font-semibold text-navy">Suitability + Compliance Report</h3>
-            <p className="mt-1 text-sm text-text-secondary">Runs the 3-pass drafting pipeline plus a COBS 9A compliance review.</p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <input placeholder="Adviser name" value={reportMeta.adviser_name}
-                onChange={(e) => setReportMeta((m) => ({ ...m, adviser_name: e.target.value }))}
-                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20" />
-              <input placeholder="Firm name" value={reportMeta.firm_name}
-                onChange={(e) => setReportMeta((m) => ({ ...m, firm_name: e.target.value }))}
-                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20" />
-              <select value={reportMeta.basis}
-                onChange={(e) => setReportMeta((m) => ({ ...m, basis: e.target.value }))}
-                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20">
-                <option>Independent</option>
-                <option>Restricted</option>
-              </select>
-              <input placeholder="Report ref" value={reportMeta.report_ref}
-                onChange={(e) => setReportMeta((m) => ({ ...m, report_ref: e.target.value }))}
-                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20" />
-              <input placeholder="Charges" value={reportMeta.charges}
-                onChange={(e) => setReportMeta((m) => ({ ...m, charges: e.target.value }))}
-                className="col-span-2 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20" />
-            </div>
-
-            {generateError && <p className="mt-3 text-sm text-red">{generateError}</p>}
-
-            <Button
-              className="mt-4 w-full"
-              disabled={!summary || generating}
-              loading={generating}
-              onClick={handleGenerateClick}
-            >
-              Generate report
-            </Button>
-          </Card>
-        </div>
-
-        {/* C. Generation progress */}
-        {generating && (
-          <Card className="mt-4">
-            <ProgressPipeline stages={GENERATE_STAGES} currentIndex={stageIndex} />
-          </Card>
-        )}
-      </section>
-
-      {/* D. Report history */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold text-navy">Report history</h2>
-        {cases.length === 0 ? (
-          <Card className="text-center text-text-secondary">No reports generated yet.</Card>
-        ) : (
-          <div className="space-y-3">
-            {cases.map((c) => (
-              <ReportRow
-                key={c.id}
-                caseItem={c}
-                client={client}
-                reportMeta={reportMeta}
-                onView={() => setViewingCase(c)}
-                onChanged={loadClient}
-                runDownload={runDownload}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <ConfirmModal
-        open={confirmGenerate}
-        title="Some details are missing"
-        message={`This client has ${flags.length} flagged item${flags.length === 1 ? '' : 's'} in their fact-find. Generate the report anyway?`}
-        confirmLabel="Generate anyway"
-        onConfirm={doGenerate}
-        onCancel={() => setConfirmGenerate(false)}
+    <>
+      <Topbar
+        breadcrumb={[{ label: 'clients', href: '/clients' }, { label: slug }]}
+        ghost={{ label: 'Edit client', onClick: () => setShowEdit(true) }}
+        primary={{ label: '+ New document', onClick: () => handleGenerateClick('suitability') }}
       />
+      <PageContainer gap={24}>
+        <div
+          className="pfx-tilt"
+          onClick={() => (factFind ? setShowDrawer(true) : setShowEntry(true))}
+          style={{ background: 'linear-gradient(150deg,#181b1f,#131518)', border: `1px solid ${color.border}`, borderRadius: 14, padding: 26, display: 'flex', gap: 22, alignItems: 'flex-start', cursor: 'pointer' }}
+        >
+          <Avatar name={client.client_name} tone={isActiveClient ? 'teal' : 'flat'} size={64} radius={14} style={{ fontSize: 24, boxShadow: isActiveClient ? '0 8px 20px -8px rgba(95,208,196,0.5)' : 'none' }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <h2 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 600, color: color.textPrimary, margin: 0, letterSpacing: '-0.01em' }}>{client.client_name}</h2>
+              {isActiveClient && (
+                <span style={{ fontSize: 11, fontWeight: 500, color: color.teal, background: color.tealSoftBg, border: `1px solid ${color.tealSoftBorder}`, padding: '3px 9px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: color.teal, animation: 'pfx-pulse 1.8s ease-in-out infinite' }} />
+                  Active client
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 6 }}>
+              <div style={{ fontFamily: font.mono, fontSize: 11.5, color: color.textFaint }}>
+                PFX-{client.id.replace(/-/g, '').slice(0, 5).toUpperCase()} · onboarded {formatDate(client.created_at)}
+              </div>
+              <span className="pfx-ff-hint" style={{ fontFamily: font.mono, fontSize: 10, letterSpacing: '0.08em', color: '#8a8f96', border: `1px solid ${color.borderRaised}`, borderRadius: 6, padding: '3px 8px' }}>
+                {factFind ? 'FULL FACT-FIND ON FILE →' : 'NO FACT-FIND ON FILE — ADD →'}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 18, marginTop: 22 }}>
+              <Fact label="Date of birth" value={keyFacts.dob} mono />
+              <Fact label="Risk" value={keyFacts.risk} />
+              <Fact label="Portfolio" value={formatMoney(client.portfolio_value)} mono color={color.teal} />
+              <Fact label="Objective" value={keyFacts.objective} />
+            </div>
+          </div>
+        </div>
 
-      {viewingCase && (
-        <ReportViewer caseItem={viewingCase} onClose={() => setViewingCase(null)} />
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h3 style={{ fontFamily: font.display, fontSize: 16, fontWeight: 600, color: color.textPrimary, margin: 0, letterSpacing: '-0.01em' }}>Generate document</h3>
+            <span style={{ fontSize: 12, color: color.textFaint, fontFamily: font.mono }}>source: notes + fact-find</span>
+          </div>
+          {generateError && <p style={{ fontSize: 12.5, color: '#e08787', marginBottom: 12 }}>{generateError}</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+            {DOC_CARDS.map((d) => {
+              const acc = docAccent[d.key]
+              const btnClass = d.key === 'suitability' ? 'pfx-btn-amber' : 'pfx-btn-teal'
+              return (
+                <div
+                  key={d.key}
+                  className={`pfx-tilt ${d.hero ? 'pfx-tilt-hero' : 'pfx-tilt-glow'}`}
+                  style={{
+                    background: d.hero ? 'linear-gradient(160deg,#2a2018,#16181b 70%)' : color.card,
+                    border: `1px solid ${d.hero ? '#6a4c22' : color.border}`,
+                    borderRadius: 13, padding: 20, display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer', position: 'relative', overflow: 'hidden',
+                  }}
+                >
+                  {d.hero && (
+                    <div style={{ position: 'absolute', top: 14, right: 14, fontFamily: font.mono, fontSize: 9, letterSpacing: '0.12em', color: color.amber, background: color.amberSoftBg, border: `1px solid ${color.amberSoftBorder}`, padding: '3px 7px', borderRadius: 5 }}>
+                      RECOMMENDED
+                    </div>
+                  )}
+                  <div
+                    className="pfx-doc-icon"
+                    style={{
+                      width: 36, height: 36, borderRadius: 10,
+                      background: d.hero ? `linear-gradient(150deg,${color.amberLight},${color.amber})` : color.raised,
+                      border: d.hero ? 'none' : `1px solid ${color.borderRaised}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: font.mono, fontSize: 12, fontWeight: d.hero ? 700 : 600,
+                      color: d.hero ? color.ink : color.teal,
+                      animation: d.hero ? 'pfx-float 3.4s ease-in-out infinite' : 'none',
+                      boxShadow: d.hero ? '0 8px 18px -6px rgba(199,137,63,0.5)' : 'none',
+                    }}
+                  >
+                    {d.code}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: color.textPrimary }}>{d.title}</div>
+                    <div style={{ fontSize: 12, color: d.hero ? '#c9b79a' : color.textFaint, lineHeight: 1.45, marginTop: 4 }}>{d.desc}</div>
+                  </div>
+                  <div
+                    className={`pfx-btn ${btnClass} pfx-sheen`}
+                    onClick={() => handleGenerateClick(d.key)}
+                    style={{ marginTop: 'auto', fontSize: 12.5, fontWeight: 600, color: color.ink, background: d.key === 'suitability' ? color.amber : color.teal, borderRadius: 8, padding: '9px 0', textAlign: 'center' }}
+                  >
+                    Generate <span className="pfx-arrow">→</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div>
+          <h3 style={{ fontFamily: font.display, fontSize: 16, fontWeight: 600, color: color.textPrimary, margin: '0 0 14px', letterSpacing: '-0.01em' }}>Report history</h3>
+          <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: 13, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr 1fr 0.9fr 40px', gap: 12, padding: '12px 20px', background: color.rail, fontFamily: font.mono, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: color.textFainter }}>
+              <div>Document</div><div>Type</div><div>Date</div><div>Status</div><div />
+            </div>
+            {cases.length === 0 ? (
+              <div style={{ padding: '18px 20px', fontSize: 13, color: color.textFaint }}>No reports generated yet.</div>
+            ) : cases.map((c, i) => {
+              const badge = reportStatusBadge(c.status)
+              const isNew = c.id === newRowId
+              return (
+                <div
+                  key={c.id}
+                  className="pfx-row"
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1.7fr 1fr 1fr 0.9fr 40px', gap: 12, padding: '15px 20px',
+                    borderTop: i === 0 ? 'none' : `1px solid ${color.borderSubtle}`, alignItems: 'center', fontSize: 13, color: color.textSecondary,
+                    animation: isNew ? 'pfx-newrow 1.4s ease' : 'none',
+                  }}
+                >
+                  <div style={{ fontWeight: 500, color: color.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.case_title}</div>
+                  <div style={{ color: color.textMuted }}>Suitability</div>
+                  <div style={{ color: color.textMuted, fontFamily: font.mono, fontSize: 12 }}>{formatDate(c.created_at)}</div>
+                  <div><span style={{ fontSize: 11, color: badge.tone === 'teal' ? color.teal : color.amber, background: badge.tone === 'teal' ? color.tealSoftBg : color.amberSoftBg, padding: '2px 9px', borderRadius: 6 }}>{badge.label}</span></div>
+                  <div
+                    className="pfx-dl"
+                    onClick={() => downloadSuitabilityDoc({
+                      client_name: client.client_name,
+                      adviser_name: c.adviser_name,
+                      firm_name: c.firm_name,
+                      basis: c.basis,
+                      charges: c.charges,
+                      report_ref: c.report_ref,
+                      report_part1: c.report_part1,
+                      report_part2: c.report_part2,
+                      report_part3: c.report_part3,
+                      report_part4: c.report_part4,
+                    }).catch((err) => setGenerateError(apiErrorMessage(err, 'Could not download that document.')))}
+                    style={{ color: color.teal, textAlign: 'center' }}
+                    title="Download Suitability Report"
+                  >
+                    ↓
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </PageContainer>
+
+      {activeGenerate && (
+        <GenerateModal
+          docKey={activeGenerate}
+          title={titleFor(activeGenerate)}
+          subtitle={subtitleFor(activeGenerate)}
+          task={taskFor(activeGenerate)}
+          onClose={() => setActiveGenerate(null)}
+        />
       )}
-    </div>
+
+      {showDrawer && factFind && (
+        <FactFindDrawer
+          client={client}
+          factFind={factFind}
+          onClose={() => setShowDrawer(false)}
+          onSave={(data) => { saveFactFind(clientId, { data, flags: factFind.flags }); setFactFind(loadFactFind(clientId)) }}
+        />
+      )}
+
+      {showEntry && <FactFindEntryModal onClose={() => { setShowEntry(false); setEntryThen(null) }} onExtracted={handleExtracted} />}
+      {showEdit && (
+        <EditClientModal
+          client={client}
+          onClose={() => setShowEdit(false)}
+          onSaved={(updated) => { setClient((c) => ({ ...c, ...updated })); setShowEdit(false) }}
+          onDeleted={() => navigate('/clients')}
+        />
+      )}
+
+      <ChatWidget />
+    </>
   )
 }
 
-function FactFindEntryPrompt({ navigate, clientId, entryMode, setEntryMode, notesInput, setNotesInput, extracting, extractError, onPaste, onUpload }) {
+function Fact({ label, value, mono, color: c }) {
   return (
-    <Card>
-      <p className="text-sm text-text-secondary">No fact-find details saved for this client yet. Get started with one of the options below:</p>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Button variant="secondary" onClick={() => navigate(`/clients/${clientId}/fact-find`)}>
-          Type details directly
-        </Button>
-        <Button variant="secondary" onClick={() => setEntryMode(entryMode === 'upload' ? null : 'upload')}>
-          Upload a document
-        </Button>
-        <Button variant="secondary" onClick={() => setEntryMode(entryMode === 'paste' ? null : 'paste')}>
-          Paste meeting notes
-        </Button>
-      </div>
-
-      {entryMode === 'upload' && (
-        <div className="mt-4">
-          <FileUploadZone onFile={onUpload} disabled={extracting} />
-        </div>
-      )}
-
-      {entryMode === 'paste' && (
-        <div className="mt-4">
-          <textarea
-            rows={8}
-            value={notesInput}
-            onChange={(e) => setNotesInput(e.target.value)}
-            placeholder="Paste raw meeting notes here…"
-            disabled={extracting}
-            className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
-          />
-          <Button className="mt-3" onClick={onPaste} loading={extracting} disabled={!notesInput.trim()}>
-            Extract fact-find data
-          </Button>
-        </div>
-      )}
-
-      {extracting && entryMode === 'upload' && (
-        <p className="mt-3 text-sm text-text-secondary">Reading document and extracting structured data…</p>
-      )}
-      {extractError && <p className="mt-3 text-sm text-red">{extractError}</p>}
-    </Card>
-  )
-}
-
-function ReportRow({ caseItem, client, reportMeta, onView, onChanged, runDownload }) {
-  const [busy, setBusy] = useState(false)
-  const upcoming = nextStatus(caseItem.status)
-
-  const advance = async () => {
-    if (!upcoming) return
-    setBusy(true)
-    try {
-      await updateCaseStatus(caseItem.id, upcoming)
-      onChanged()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const remove = async () => {
-    if (!confirm('Delete this report? This cannot be undone.')) return
-    setBusy(true)
-    try {
-      await deleteCase(caseItem.id)
-      onChanged()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Card className="flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <p className="font-medium text-navy">{caseItem.case_title} <span className="text-text-secondary">· v{caseItem.version}</span></p>
-        <p className="mt-1 text-xs text-text-secondary">{new Date(caseItem.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <RAGBadge rag={caseItem.rag_rating} size="sm" />
-        <StatusBadge status={caseItem.status} />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={onView}>View</Button>
-        <Button size="sm" variant="secondary" onClick={runDownload(() => downloadSuitabilityDoc({
-          client_name: client.client_name,
-          adviser_name: caseItem.adviser_name || reportMeta.adviser_name,
-          firm_name: caseItem.firm_name || reportMeta.firm_name,
-          basis: caseItem.basis,
-          charges: caseItem.charges,
-          report_ref: caseItem.report_ref,
-          report_part1: caseItem.report_part1,
-          report_part2: caseItem.report_part2,
-          report_part3: caseItem.report_part3,
-          report_part4: caseItem.report_part4,
-        }))}>
-          Suitability .docx
-        </Button>
-        <Button size="sm" variant="secondary" onClick={runDownload(() => downloadComplianceDoc({
-          client_name: client.client_name,
-          adviser_name: caseItem.adviser_name || reportMeta.adviser_name,
-          firm_name: caseItem.firm_name || reportMeta.firm_name,
-          report_ref: caseItem.report_ref,
-          check_text: caseItem.compliance_result,
-          passes: caseItem.passes,
-          flags: caseItem.flags,
-          fails: caseItem.fails,
-        }))}>
-          Compliance .docx
-        </Button>
-        {upcoming && (
-          <Button size="sm" variant="outline" onClick={advance} loading={busy}>
-            Mark {statusStyle(upcoming).label}
-          </Button>
-        )}
-        <Button size="sm" variant="danger" onClick={remove} loading={busy}>Delete</Button>
-      </div>
-    </Card>
-  )
-}
-
-function ReportViewer({ caseItem, onClose }) {
-  const [tab, setTab] = useState('report')
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy/40 p-4" onClick={onClose}>
-      <div className="flex h-[85vh] w-full max-w-3xl flex-col animate-fade-in-up rounded-xl bg-surface shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h3 className="font-semibold text-navy">{caseItem.case_title}</h3>
-          <button onClick={onClose} className="text-text-secondary hover:text-navy">✕</button>
-        </div>
-        <div className="flex gap-2 border-b border-border px-6 pt-3">
-          <button onClick={() => setTab('report')} className={`border-b-2 px-2 pb-2 text-sm font-medium ${tab === 'report' ? 'border-emerald text-navy' : 'border-transparent text-text-secondary'}`}>Suitability Report</button>
-          <button onClick={() => setTab('compliance')} className={`border-b-2 px-2 pb-2 text-sm font-medium ${tab === 'compliance' ? 'border-emerald text-navy' : 'border-transparent text-text-secondary'}`}>Compliance Review</button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-navy">
-            {tab === 'report'
-              ? [caseItem.report_part1, caseItem.report_part2, caseItem.report_part3, caseItem.report_part4].filter(Boolean).join('\n\n')
-              : caseItem.compliance_result || 'No compliance data recorded for this report.'}
-          </pre>
-        </div>
-      </div>
+    <div>
+      <div style={{ fontFamily: font.mono, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: color.textFainter }}>{label}</div>
+      <div style={{ fontSize: 15, color: c || color.textPrimary, marginTop: 5, fontWeight: 500, fontFamily: mono ? font.mono : font.body }}>{value}</div>
     </div>
   )
 }

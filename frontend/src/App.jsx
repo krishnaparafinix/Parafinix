@@ -1,12 +1,13 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
-import AppLayout from './components/AppLayout'
+import AppShell from './components/layout/AppShell'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
+import Clients from './pages/Clients'
+import Reports from './pages/Reports'
 import ClientProfile from './pages/ClientProfile'
-import FactFindReview from './pages/FactFindReview'
 
 export default function App() {
   return (
@@ -17,10 +18,11 @@ export default function App() {
           <Route path="/register" element={<Register />} />
 
           <Route element={<ProtectedRoute />}>
-            <Route element={<AppLayout />}>
+            <Route element={<AppShell />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:clientId" element={<ClientProfile />} />
-              <Route path="/clients/:clientId/fact-find" element={<FactFindReview />} />
+              <Route path="/reports" element={<Reports />} />
             </Route>
           </Route>
 

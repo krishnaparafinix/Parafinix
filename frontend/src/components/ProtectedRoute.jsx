@@ -6,8 +6,8 @@ export default function ProtectedRoute() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-bg">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald border-t-transparent" />
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#0f1113' }}>
+        <div style={{ height: 24, width: 24, borderRadius: '50%', border: '2px solid #5fd0c4', borderTopColor: 'transparent', animation: 'pfx-spin 0.7s linear infinite' }} />
       </div>
     )
   }

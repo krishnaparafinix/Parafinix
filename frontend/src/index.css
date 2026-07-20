@@ -1,65 +1,123 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
-@theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-
-  --color-navy: #0B1F3A;
-  --color-brand-blue: #3B82F6;
-  --color-emerald: #10B981;
-  --color-bg: #F8FAFC;
-  --color-surface: #FFFFFF;
-  --color-border: #E2E8F0;
-  --color-text-secondary: #64748B;
-  --color-amber: #B8860B;
-  --color-red: #C0392B;
-
-  --animate-fade-in-up: fade-in-up 0.3s ease both;
-  --animate-pulse-node: pulse-node 1.8s ease-in-out infinite;
-  --animate-trace-flow: trace-flow 1.6s linear infinite;
-}
-
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse-node {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-}
-
-@keyframes trace-flow {
-  0% {
-    stroke-dashoffset: 24;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
-}
+/* "Precision Instrument" — approved dark theme. Keyframe names (pfx-*) match
+   the Claude Design handoff exactly so components can be diffed against the
+   source .dc.html files. */
 
 html, body, #root {
   height: 100%;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-navy);
-  font-family: var(--font-sans);
+  background: #0f1113;
   -webkit-font-smoothing: antialiased;
 }
 
-* {
-  border-color: var(--color-border);
+a {
+  color: #5fd0c4;
+  text-decoration: none;
 }
+a:hover {
+  color: #7fe0d5;
+}
+
+@keyframes pfx-wing-a { 0%,100%{ transform: skewX(-14deg) scaleY(0.72);} 50%{ transform: skewX(-14deg) scaleY(1);} }
+@keyframes pfx-wing-b { 0%,100%{ transform: skewX(-14deg) scaleY(1);} 50%{ transform: skewX(-14deg) scaleY(0.7);} }
+@keyframes pfx-pulse { 0%,100%{ opacity:0.35; transform:scale(1);} 50%{ opacity:1; transform:scale(1.35);} }
+@keyframes pfx-float { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-3px);} }
+@keyframes pfx-count { from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:translateY(0);} }
+@keyframes pfx-grow { from{ transform:scaleY(0);} to{ transform:scaleY(1);} }
+@keyframes pfx-nodepulse { 0%,100%{ transform:translateY(-50%) scale(1); box-shadow:0 0 0 0 rgba(95,208,196,0.5);} 50%{ transform:translateY(-50%) scale(1.28); box-shadow:0 0 0 7px rgba(95,208,196,0);} }
+@keyframes pfx-nodepulse-static { 0%,100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(95,208,196,0.5);} 50%{ transform:scale(1.28); box-shadow:0 0 0 7px rgba(95,208,196,0);} }
+@keyframes pfx-nodepulse-c { 0%,100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(95,208,196,0.55);} 50%{ transform:scale(1.25); box-shadow:0 0 0 8px rgba(95,208,196,0);} }
+@keyframes pfx-dot { 0%{ left:2px; opacity:0;} 12%{opacity:1;} 88%{opacity:1;} 100%{ left:calc(100% - 8px); opacity:0;} }
+@keyframes pfx-pop { from{opacity:0;transform:translateY(14px) scale(.97);} to{opacity:1;transform:translateY(0) scale(1);} }
+@keyframes pfx-msg { from{opacity:0;transform:translateY(7px);} to{opacity:1;transform:translateY(0);} }
+@keyframes pfx-spinline { 0%{opacity:.45;} 50%{opacity:1;} 100%{opacity:.45;} }
+@keyframes pfx-fade { from{opacity:0;} to{opacity:1;} }
+@keyframes pfx-spin { to{ transform: rotate(360deg);} }
+@keyframes pfx-scan { 0%{transform:translateX(-100%);} 100%{transform:translateX(320%);} }
+@keyframes pfx-check { 0%{stroke-dashoffset:26;} 100%{stroke-dashoffset:0;} }
+@keyframes pfx-newrow { from{opacity:0;background:rgba(199,137,63,0.14);} to{opacity:1;background:transparent;} }
+@keyframes pfx-slidein { from{ transform: translateX(100%);} to{ transform: translateX(0);} }
+@keyframes pfx-sheen { 0%{ background-position: -140% 0;} 100%{ background-position: 240% 0;} }
+
+.pfx-logo:hover .pfx-w1 { animation: pfx-wing-a 0.9s ease-in-out infinite; }
+.pfx-logo:hover .pfx-w3 { animation: pfx-wing-b 0.9s ease-in-out infinite; }
+
+.pfx-tilt { transition: transform 0.35s cubic-bezier(.2,.7,.2,1), box-shadow 0.35s ease, border-color 0.25s ease; transform-style: preserve-3d; }
+.pfx-tilt:hover { transform: perspective(900px) translateY(-6px) rotateX(4deg); box-shadow: 0 26px 44px -22px rgba(0,0,0,0.75); border-color:#33383e; }
+.pfx-tilt-hero:hover { box-shadow: 0 30px 50px -20px rgba(199,137,63,0.35), 0 0 0 1px rgba(199,137,63,0.55) !important; }
+.pfx-tilt-glow:hover { box-shadow: 0 26px 44px -22px rgba(0,0,0,0.75), 0 0 0 1px rgba(95,208,196,0.18) !important; }
+.pfx-stat:hover { border-color: rgba(95,208,196,0.4); }
+.pfx-stat-amber:hover { border-color: rgba(199,137,63,0.5); }
+.pfx-stat-icon { transition: transform 0.35s cubic-bezier(.2,.7,.2,1); }
+.pfx-tilt:hover .pfx-stat-icon, .pfx-tilt:hover .pfx-doc-icon { transform: translateZ(20px); }
+
+.pfx-btn { transition: background 0.22s ease, color 0.22s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.22s ease; cursor:pointer; }
+.pfx-btn:hover { transform: translateY(-2px); }
+.pfx-btn:active { transform: translateY(1px) scale(0.98); }
+.pfx-btn-ghost:hover { border-color:#5fd0c4 !important; color:#5fd0c4 !important; background:#1b2422 !important; }
+.pfx-btn-ghost:active { border-color:#c7893f !important; color:#c7893f !important; }
+.pfx-btn-amber:hover { background:#d89646 !important; box-shadow:0 10px 24px -8px rgba(199,137,63,0.6); }
+.pfx-btn-amber:active { background:#b9781f !important; }
+.pfx-btn-teal:hover { background:#7fe0d5 !important; box-shadow:0 10px 24px -8px rgba(95,208,196,0.55); }
+.pfx-btn-teal:active { background:#3bb3a6 !important; }
+
+.pfx-sheen { position:relative; overflow:hidden; }
+.pfx-sheen::after { content:""; position:absolute; inset:0; background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,0.35) 50%,transparent 70%); background-size:200% 100%; opacity:0; }
+.pfx-sheen:hover::after { opacity:1; animation: pfx-sheen 0.9s ease forwards; }
+
+.pfx-nav:hover { background:#1b1e22; color:#f4f5f6 !important; padding-left:16px; }
+.pfx-nav { transition: background 0.18s ease, color 0.18s ease, padding-left 0.18s ease; }
+
+.pfx-side { width:72px; flex:0 0 auto; position:relative; }
+.pfx-panel { position:fixed; top:0; left:0; height:100vh; width:72px; background:#131518; border-right:1px solid #26292d; z-index:30; perspective:1400px; overflow:hidden; transition: width .42s cubic-bezier(.2,.8,.2,1), box-shadow .42s ease; }
+.pfx-side:hover .pfx-panel, body.pfx-open .pfx-panel { width:236px; box-shadow:34px 0 64px -26px rgba(0,0,0,.85); }
+.pfx-panel-3d { height:100%; width:236px; color:#9298a0; display:flex; flex-direction:column; padding:22px 0; transform-origin:left center; transform: rotateY(-22deg); transition: transform .42s cubic-bezier(.2,.8,.2,1); backface-visibility:hidden; }
+.pfx-side:hover .pfx-panel-3d, body.pfx-open .pfx-panel-3d { transform: rotateY(0deg); }
+.pfx-label { white-space:nowrap; opacity:0; transform:translateX(-4px); transition: opacity .2s ease, transform .3s ease; }
+.pfx-side:hover .pfx-label, body.pfx-open .pfx-label { opacity:1; transform:translateX(0); transition-delay:.08s; }
+
+.pfx-row { transition: background 0.16s ease; }
+.pfx-row:hover { background:#1b1e22; }
+.pfx-arrow { transition: transform 0.2s ease; display:inline-block; }
+.pfx-btn:hover .pfx-arrow, .pfx-row:hover .pfx-arrow { transform: translateX(4px); }
+.pfx-avatar { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.pfx-row:hover .pfx-avatar { transform: scale(1.06); }
+
+.pfx-quick { transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease; cursor:pointer; }
+.pfx-quick:hover { transform: translateY(-3px); border-color:#c7893f !important; background:#1c1913 !important; }
+.pfx-quick:hover .pfx-quick-ico { transform: translateY(-2px); }
+.pfx-quick-ico { transition: transform 0.25s ease; }
+
+.pfx-bar { transform-origin: bottom; animation: pfx-grow 0.7s cubic-bezier(.2,.7,.2,1) both; }
+.pfx-bar:hover { filter: brightness(1.2); }
+
+.pfx-btnround { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease; }
+.pfx-btnround:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -12px rgba(0,0,0,0.7); }
+.pfx-btnround .pfx-btnlabel { max-width:0; opacity:0; overflow:hidden; white-space:nowrap; transition: max-width .3s cubic-bezier(.2,.8,.2,1), opacity .2s ease, margin .3s ease; }
+.pfx-btnround:hover .pfx-btnlabel { max-width:130px; opacity:1; margin-left:2px; }
+
+.pfx-achip { transition: border-color .16s ease, background .16s ease, transform .12s ease; cursor:pointer; }
+.pfx-achip:hover { border-color:#3a4b49; background:#1b2422; transform:translateY(-1px); }
+.pfx-send { transition: filter .18s ease, transform .12s ease, opacity .18s ease; }
+.pfx-send:hover { filter:brightness(1.08); }
+.pfx-send:active { transform:scale(.94); }
+.pfx-iconbtn { transition: background .16s ease, color .16s ease; cursor:pointer; }
+.pfx-iconbtn:hover { background:#1b1e22; color:#f4f5f6; }
+.pfx-input:focus-within { border-color:#5fd0c4 !important; box-shadow:0 0 0 3px rgba(95,208,196,0.12); }
+.pfx-search:focus-within { border-color:#5fd0c4 !important; box-shadow:0 0 0 3px rgba(95,208,196,0.12); }
+
+.pfx-chip:hover { border-color:#5fd0c4; color:#e7e9ea; }
+.pfx-dl { transition: transform 0.15s ease, color 0.15s ease; cursor:pointer; }
+.pfx-dl:hover { transform: translateY(2px); color:#c7893f; }
+
+.pfx-ff-hint { transition: color 0.18s ease, border-color 0.18s ease; }
+.pfx-tilt:hover .pfx-ff-hint { color:#c7893f; border-color:rgba(199,137,63,0.45); }
