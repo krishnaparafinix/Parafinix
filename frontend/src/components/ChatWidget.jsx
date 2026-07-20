@@ -7,6 +7,24 @@ import { color, font } from '../lib/theme'
 const WORKSPACE_PROMPTS = ["What's my report status?", 'How many reports did I generate this month?']
 const KNOWLEDGE_PROMPTS = ['What must a suitability report cover?', 'Explain COBS 9 in plain terms']
 
+const POS_KEY = 'parafinix_chat_pos'
+const MARGIN = 24
+const BUTTON_SIZE = 56
+const DRAG_THRESHOLD = 5
+
+function defaultPos() {
+  return { x: window.innerWidth - MARGIN - BUTTON_SIZE, y: window.innerHeight - MARGIN - BUTTON_SIZE }
+}
+
+function clampPos(pos, el) {
+  const w = el?.offsetWidth || BUTTON_SIZE
+  const h = el?.offsetHeight || BUTTON_SIZE
+  return {
+    x: Math.min(Math.max(pos.x, MARGIN), window.innerWidth - w - MARGIN),
+    y: Math.min(Math.max(pos.y, MARGIN), window.innerHeight - h - MARGIN),
+  }
+}
+
 function TraceLine({ width = 30, height = 12, dotDuration = '1.7s', pulseDuration = '1.4s' }) {
   return (
     <div style={{ position: 'relative', width, height, flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
@@ -63,8 +81,60 @@ export default function ChatWidget() {
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [thinkingLabel, setThinkingLabel] = useState('Thinking…')
+  const [pos, setPos] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(POS_KEY))
+      if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') return saved
+    } catch {
+      // ignore malformed value
+    }
+    return defaultPos()
+  })
+  const [dragging, setDragging] = useState(false)
   const listRef = useRef(null)
   const inputRef = useRef(null)
+  const buttonRef = useRef(null)
+  const dragState = useRef(null)
+
+  useEffect(() => {
+    const onResize = () => setPos((p) => clampPos(p, buttonRef.current))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const onPointerDown = (e) => {
+    dragState.current = { startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onPointerMove = (e) => {
+    if (!dragState.current) return
+    const dx = e.clientX - dragState.current.startX
+    const dy = e.clientY - dragState.current.startY
+    if (!dragState.current.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      dragState.current.moved = true
+      setDragging(true)
+    }
+    if (dragState.current.moved) {
+      setPos(clampPos({ x: dragState.current.originX + dx, y: dragState.current.originY + dy }, buttonRef.current))
+    }
+  }
+
+  const onPointerUp = (e) => {
+    if (!dragState.current) return
+    const wasDrag = dragState.current.moved
+    dragState.current = null
+    setDragging(false)
+    if (wasDrag) {
+      setPos((p) => {
+        localStorage.setItem(POS_KEY, JSON.stringify(p))
+        return p
+      })
+    } else {
+      setOpen((o) => !o)
+    }
+    e.currentTarget?.releasePointerCapture?.(e.pointerId)
+  }
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
@@ -107,13 +177,35 @@ export default function ChatWidget() {
   const showWelcome = messages.length === 0 && !thinking
   const firstName = (user?.full_name || '').split(' ')[0]
 
+  const panelW = 388
+  const panelH = Math.min(576, window.innerHeight - 2 * MARGIN)
+  const spaceAbove = pos.y
+  const spaceBelow = window.innerHeight - pos.y - BUTTON_SIZE
+  const above = spaceAbove >= panelH + 12 || spaceAbove >= spaceBelow
+  const alignRight = pos.x + BUTTON_SIZE - panelW >= MARGIN
+  const panelStyle = {
+    position: 'absolute',
+    top: above ? -(panelH + 12) : BUTTON_SIZE + 12,
+    left: alignRight ? BUTTON_SIZE - panelW : 0,
+  }
+
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 60 }}>
+    <div style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 60, width: 0, height: 0 }}>
       {!open && (
         <div
+          ref={buttonRef}
           className="pfx-btnround"
-          onClick={() => setOpen(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', background: color.card, border: `1px solid ${color.borderRaised}`, color: color.textPrimary, height: 56, padding: '0 18px', borderRadius: 999, boxShadow: '0 14px 34px -10px rgba(0,0,0,0.7)', cursor: 'pointer' }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          style={{
+            position: 'absolute', top: 0, left: 0,
+            display: 'inline-flex', alignItems: 'center', background: color.card, border: `1px solid ${color.borderRaised}`,
+            color: color.textPrimary, height: BUTTON_SIZE, padding: '0 18px', borderRadius: 999,
+            boxShadow: '0 14px 34px -10px rgba(0,0,0,0.7)', cursor: dragging ? 'grabbing' : 'grab',
+            touchAction: 'none', userSelect: 'none', whiteSpace: 'nowrap',
+            transition: dragging ? 'none' : 'transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease',
+          }}
         >
           <TraceLine />
           <span className="pfx-btnlabel" style={{ fontSize: 14, fontWeight: 500 }}>Ask Parafinix</span>
@@ -121,7 +213,7 @@ export default function ChatWidget() {
       )}
 
       {open && (
-        <div style={{ width: 388, height: 576, maxHeight: 'calc(100vh - 48px)', background: color.rail, border: `1px solid ${color.border}`, borderRadius: 16, boxShadow: '0 30px 60px -22px rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'pfx-pop .34s cubic-bezier(.2,.8,.2,1)' }}>
+        <div style={{ ...panelStyle, width: panelW, height: panelH, background: color.rail, border: `1px solid ${color.border}`, borderRadius: 16, boxShadow: '0 30px 60px -22px rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'pfx-pop .34s cubic-bezier(.2,.8,.2,1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '15px 16px', borderBottom: `1px solid ${color.borderSubtle}`, flex: '0 0 auto' }}>
             <div style={{ width: 38, height: 38, borderRadius: 10, background: color.raised, border: `1px solid ${color.borderRaised}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
               <TraceLine width={20} height={10} />

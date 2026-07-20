@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getClient } from '../api/clients'
 import { saveCase } from '../api/cases'
 import { generateReport } from '../api/generate'
 import { rerunCompliance } from '../api/aiChat'
-import { downloadFactFindDoc, downloadSuitabilityDoc } from '../api/documents'
+import { downloadFactFindDoc, downloadSuitabilityDoc, downloadComplianceDoc } from '../api/documents'
 import { loadFactFind, saveFactFind } from '../lib/localFactFind'
 import { factFindToNotes } from '../lib/factFindToNotes'
 import { apiErrorMessage } from '../api/client'
@@ -49,6 +49,7 @@ export default function ClientProfile() {
   const [activeGenerate, setActiveGenerate] = useState(null)
   const [generateError, setGenerateError] = useState('')
   const [newRowId, setNewRowId] = useState(null)
+  const lastGenerated = useRef(null) // holds the case data behind the modal's "Download" button
 
   const load = () => {
     setLoading(true)
@@ -115,13 +116,16 @@ export default function ClientProfile() {
     })
     setCases((prev) => [saved, ...prev])
     setNewRowId(saved.id)
+    lastGenerated.current = saved
     return saved
   }
 
   const runCompliance = async () => {
     const result = await rerunCompliance(latestCase.id)
-    setCases((prev) => prev.map((c) => (c.id === latestCase.id ? { ...c, compliance_result: result.check_text, passes: result.passes, flags: result.flags, fails: result.fails, rag_rating: result.rag_rating } : c)))
+    const updated = { ...latestCase, compliance_result: result.check_text, passes: result.passes, flags: result.flags, fails: result.fails, rag_rating: result.rag_rating }
+    setCases((prev) => prev.map((c) => (c.id === latestCase.id ? updated : c)))
     setNewRowId(latestCase.id)
+    lastGenerated.current = updated
     return result
   }
 
@@ -134,6 +138,36 @@ export default function ClientProfile() {
       client_facing: false,
     })
     return {}
+  }
+
+  const downloadFor = (key) => {
+    if (key === 'factfind') return runFactFindDoc
+    const c = lastGenerated.current
+    if (!c) return null
+    if (key === 'suitability') {
+      return () => downloadSuitabilityDoc({
+        client_name: client.client_name,
+        adviser_name: c.adviser_name,
+        firm_name: c.firm_name,
+        basis: c.basis,
+        charges: c.charges,
+        report_ref: c.report_ref,
+        report_part1: c.report_part1,
+        report_part2: c.report_part2,
+        report_part3: c.report_part3,
+        report_part4: c.report_part4,
+      })
+    }
+    return () => downloadComplianceDoc({
+      client_name: client.client_name,
+      adviser_name: c.adviser_name,
+      firm_name: c.firm_name,
+      report_ref: c.report_ref,
+      check_text: c.compliance_result,
+      passes: c.passes,
+      flags: c.flags,
+      fails: c.fails,
+    })
   }
 
   const handleGenerateClick = (key) => {
@@ -163,8 +197,8 @@ export default function ClientProfile() {
   const titleFor = (key) => DOC_CARDS.find((d) => d.key === key)?.title || ''
   const subtitleFor = (key) => {
     if (key === 'factfind') return { running: 'Building the fact-find document…', done: 'Downloaded to your device.' }
-    if (key === 'suitability') return { running: 'AI is reading your notes and drafting…', done: 'Drafted from notes + fact-find · added to history.' }
-    return { running: 'Rerunning the 28-point compliance check…', done: 'Compliance rating updated on the latest report.' }
+    if (key === 'suitability') return { running: 'AI is reading your notes and drafting…', done: 'Saved to report history — download below, or find it there any time.' }
+    return { running: 'Rerunning the 28-point compliance check…', done: 'Compliance rating updated on the latest report — download below.' }
   }
 
   if (loading) return <div style={{ padding: 34, color: color.textFaint, fontSize: 13 }}>Loading client…</div>
@@ -329,6 +363,7 @@ export default function ClientProfile() {
           title={titleFor(activeGenerate)}
           subtitle={subtitleFor(activeGenerate)}
           task={taskFor(activeGenerate)}
+          onDownload={downloadFor(activeGenerate)}
           onClose={() => setActiveGenerate(null)}
         />
       )}

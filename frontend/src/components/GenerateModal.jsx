@@ -10,11 +10,13 @@ const STEPS = ['Reading meeting notes', 'Extracting client data', 'Drafting sect
 // never lies about being "done" before the API call returns.
 const EST_DURATION_MS = { factfind: 5000, suitability: 100000, compliance: 18000 }
 
-export default function GenerateModal({ docKey, title, subtitle, task, onClose, onDone }) {
+export default function GenerateModal({ docKey, title, subtitle, task, onClose, onDone, onDownload }) {
   const [phase, setPhase] = useState('running') // running | done | error
   const [pct, setPct] = useState(0)
   const [stepIdx, setStepIdx] = useState(0)
   const [error, setError] = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
   const timer = useRef(null)
   const ranTask = useRef(false)
 
@@ -116,14 +118,31 @@ export default function GenerateModal({ docKey, title, subtitle, task, onClose, 
           </div>
         )}
 
+        {done && downloadError && <p style={{ fontSize: 12, color: '#e08787', margin: '14px 0 0' }}>{downloadError}</p>}
+
         {(done || failed) && (
           <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
             <div className="pfx-btn pfx-btn-ghost" onClick={onClose} style={{ flex: 1, fontSize: 13, fontWeight: 500, color: color.textSecondary2, border: `1px solid ${color.borderRaised}`, borderRadius: 9, padding: '11px 0', textAlign: 'center', cursor: 'pointer' }}>
-              Close
+              {done ? 'Save & close' : 'Close'}
             </div>
-            {done && (
-              <div className="pfx-btn" onClick={onClose} style={{ flex: 1.4, fontSize: 13, fontWeight: 600, color: color.ink, background: d.accent, borderRadius: 9, padding: '11px 0', textAlign: 'center', cursor: 'pointer' }}>
-                Done
+            {done && onDownload && (
+              <div
+                className="pfx-btn"
+                onClick={async () => {
+                  if (downloading) return
+                  setDownloadError('')
+                  setDownloading(true)
+                  try {
+                    await onDownload()
+                  } catch (err) {
+                    setDownloadError(apiErrorMessage(err, 'Could not download that document.'))
+                  } finally {
+                    setDownloading(false)
+                  }
+                }}
+                style={{ flex: 1.4, fontSize: 13, fontWeight: 600, color: color.ink, background: d.accent, borderRadius: 9, padding: '11px 0', textAlign: 'center', cursor: 'pointer', opacity: downloading ? 0.7 : 1 }}
+              >
+                {downloading ? 'Downloading…' : 'Download'}
               </div>
             )}
           </div>
