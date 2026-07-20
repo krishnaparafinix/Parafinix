@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listClients } from '../api/clients'
 import { apiErrorMessage } from '../api/client'
+import { loadAllClientMeta } from '../lib/localClientMeta'
 import { color, font } from '../lib/theme'
 import Topbar from '../components/layout/Topbar'
 import PageContainer from '../components/layout/PageContainer'
@@ -17,7 +18,10 @@ function refOf(id) {
   return 'PFX-' + (id || '').replace(/-/g, '').slice(0, 5).toUpperCase()
 }
 
-function deriveStatus(client) {
+// Status is local-meta first (set via Add/Edit client), falling back to a
+// derived guess from case activity for clients created before that existed.
+function deriveStatus(client, meta) {
+  if (meta?.status) return meta.status
   if (!client.case_count) return 'Prospect'
   if (client.latest_status === 'draft' || client.latest_status === 'in_review') return 'Review due'
   return 'Active'
@@ -57,14 +61,27 @@ export default function Clients() {
 
   useEffect(load, [])
 
-  const enriched = useMemo(() => clients.map((c) => ({ ...c, status: deriveStatus(c), ref: refOf(c.id) })), [clients])
+  const enriched = useMemo(() => {
+    const allMeta = loadAllClientMeta()
+    return clients.map((c) => {
+      const meta = allMeta[c.id]
+      return {
+        ...c,
+        ref: refOf(c.id),
+        objective: meta?.objective || '',
+        risk: meta?.risk || '',
+        review: meta?.next_review || '',
+        status: deriveStatus(c, meta),
+      }
+    })
+  }, [clients])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return enriched.filter((c) => {
       if (filter !== 'All' && c.status !== filter) return false
       if (!q) return true
-      return (c.client_name || '').toLowerCase().includes(q) || c.ref.toLowerCase().includes(q) || (c.segment || '').toLowerCase().includes(q)
+      return (c.client_name || '').toLowerCase().includes(q) || c.ref.toLowerCase().includes(q) || c.objective.toLowerCase().includes(q)
     })
   }, [enriched, search, filter])
 
@@ -95,7 +112,7 @@ export default function Clients() {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search clients, reference, segment…" hint="⌘K" />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search clients, reference, objective…" hint="⌘K" />
           <div style={{ display: 'flex', gap: 8 }}>
             {FILTERS.map((f) => <Chip key={f} label={f} active={filter === f} onClick={() => setFilter(f)} />)}
           </div>
@@ -103,7 +120,7 @@ export default function Clients() {
 
         <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: 13, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.1fr 1fr 1fr 40px', gap: 12, padding: '12px 20px', background: color.rail, fontFamily: font.mono, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: color.textFainter }}>
-            <div>Client</div><div>Segment</div><div>Portfolio</div><div>Reports</div><div>Status</div><div />
+            <div>Client</div><div>Risk</div><div>Portfolio</div><div>Next review</div><div>Status</div><div />
           </div>
 
           {loading ? (
@@ -125,12 +142,12 @@ export default function Clients() {
                   <Avatar className="pfx-avatar" name={c.client_name} tone={st.tone} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 500, color: color.textPrimary }}>{c.client_name}</div>
-                    <div style={{ fontFamily: font.mono, fontSize: 11, color: color.textFaint }}>{c.ref}{c.segment ? ` · ${c.segment}` : ''}</div>
+                    <div style={{ fontFamily: font.mono, fontSize: 11, color: color.textFaint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ref}{c.objective ? ` · ${c.objective}` : ''}</div>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, color: color.textSecondary2 }}>{c.segment || '—'}</div>
+                <div style={{ fontSize: 13, color: color.textSecondary2 }}>{c.risk || '—'}</div>
                 <div style={{ fontSize: 13, color: color.teal, fontFamily: font.mono, fontWeight: 500 }}>{formatMoney(c.portfolio_value)}</div>
-                <div style={{ fontSize: 13, color: color.textMuted, fontFamily: font.mono }}>{c.case_count ?? 0}</div>
+                <div style={{ fontSize: 13, color: color.textMuted, fontFamily: font.mono }}>{c.review || '—'}</div>
                 <div><span style={{ fontSize: 11, color: st.color, background: st.bg, padding: '3px 9px', borderRadius: 6 }}>{c.status}</span></div>
                 <div className="pfx-arrow" style={{ color: color.teal, textAlign: 'center' }}>→</div>
               </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { updateClient, deleteClient } from '../api/clients'
+import { loadClientMeta, saveClientMeta } from '../lib/localClientMeta'
 import { apiErrorMessage } from '../api/client'
 import { color, font } from '../lib/theme'
 
@@ -8,11 +9,14 @@ const inputStyle = {
   borderRadius: 8, padding: '9px 12px', color: color.textPrimary, fontSize: 13, outline: 'none', fontFamily: font.body,
 }
 const labelStyle = { display: 'block', marginBottom: 6, fontSize: 11.5, color: color.textFaint }
+const STATUS_OPTIONS = ['Active', 'Prospect', 'Review due']
 
 export default function EditClientModal({ client, onClose, onSaved, onDeleted }) {
+  const meta = loadClientMeta(client.id) || {}
   const [form, setForm] = useState({
     client_name: client.client_name || '', email: client.email || '', phone: client.phone || '',
-    segment: client.segment || '', portfolio_value: client.portfolio_value ?? '',
+    portfolio_value: client.portfolio_value ?? '',
+    objective: meta.objective || '', risk: meta.risk || '', next_review: meta.next_review || '', status: meta.status || 'Active',
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -30,8 +34,13 @@ export default function EditClientModal({ client, onClose, onSaved, onDeleted })
         client_name: form.client_name,
         email: form.email || null,
         phone: form.phone || null,
-        segment: form.segment || null,
         portfolio_value: form.portfolio_value === '' ? null : Number(form.portfolio_value),
+      })
+      saveClientMeta(client.id, {
+        objective: form.objective.trim() || null,
+        risk: form.risk.trim() || null,
+        next_review: form.next_review.trim() || null,
+        status: form.status,
       })
       onSaved(updated)
     } catch (err) {
@@ -54,21 +63,43 @@ export default function EditClientModal({ client, onClose, onSaved, onDeleted })
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(9,10,12,0.72)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pfx-fade 0.2s ease' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: 'calc(100vw - 40px)', background: 'linear-gradient(160deg,#181b1f,#131518)', border: `1px solid ${color.border}`, borderRadius: 16, padding: 28, boxShadow: '0 40px 90px -30px rgba(0,0,0,0.85)', animation: 'pfx-pop 0.28s cubic-bezier(.2,.7,.2,1)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(9,10,12,0.72)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pfx-fade 0.2s ease', padding: 24 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 480, maxWidth: '100%', maxHeight: 'calc(100vh - 48px)', overflow: 'auto', background: 'linear-gradient(160deg,#181b1f,#131518)', border: `1px solid ${color.border}`, borderRadius: 16, padding: 28, boxShadow: '0 40px 90px -30px rgba(0,0,0,0.85)', animation: 'pfx-pop 0.28s cubic-bezier(.2,.7,.2,1)' }}>
         <h3 style={{ fontFamily: font.display, fontSize: 17, fontWeight: 600, color: color.textPrimary, margin: 0 }}>Edit client</h3>
         <form onSubmit={handleSubmit} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label style={labelStyle}>Client name *</label>
+            <label style={labelStyle}>Full name *</label>
             <input required value={form.client_name} onChange={update('client_name')} style={inputStyle} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={labelStyle}>Objective</label><input value={form.objective} onChange={update('objective')} style={inputStyle} /></div>
+            <div><label style={labelStyle}>Risk profile</label><input value={form.risk} onChange={update('risk')} style={inputStyle} /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={labelStyle}>Portfolio value</label><input type="number" value={form.portfolio_value} onChange={update('portfolio_value')} style={{ ...inputStyle, fontFamily: font.mono }} /></div>
+            <div><label style={labelStyle}>Next review</label><input value={form.next_review} onChange={update('next_review')} style={{ ...inputStyle, fontFamily: font.mono }} /></div>
+          </div>
+          <div>
+            <label style={labelStyle}>Status</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {STATUS_OPTIONS.map((s) => {
+                const on = form.status === s
+                return (
+                  <div
+                    key={s}
+                    className="pfx-chip"
+                    onClick={() => setForm((f) => ({ ...f, status: s }))}
+                    style={{ fontSize: 12, borderRadius: 20, padding: '7px 14px', border: `1px solid ${on ? color.teal : color.borderRaised}`, background: on ? '#1b2422' : 'transparent', color: on ? color.textSecondary : color.textMuted, cursor: 'pointer' }}
+                  >
+                    {s}
+                  </div>
+                )
+              })}
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><label style={labelStyle}>Email</label><input type="email" value={form.email} onChange={update('email')} style={inputStyle} /></div>
             <div><label style={labelStyle}>Phone</label><input value={form.phone} onChange={update('phone')} style={inputStyle} /></div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><label style={labelStyle}>Segment</label><input value={form.segment} onChange={update('segment')} style={inputStyle} /></div>
-            <div><label style={labelStyle}>Portfolio value</label><input type="number" value={form.portfolio_value} onChange={update('portfolio_value')} style={{ ...inputStyle, fontFamily: font.mono }} /></div>
           </div>
 
           {error && <p style={{ fontSize: 12.5, color: '#e08787', margin: 0 }}>{error}</p>}

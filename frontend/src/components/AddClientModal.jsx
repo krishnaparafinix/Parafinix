@@ -1,33 +1,41 @@
 import { useState } from 'react'
 import { createClient } from '../api/clients'
+import { saveClientMeta } from '../lib/localClientMeta'
 import { apiErrorMessage } from '../api/client'
 import { color, font } from '../lib/theme'
 
-const inputStyle = {
-  width: '100%', boxSizing: 'border-box', background: color.bg, border: `1px solid ${color.borderRaised}`,
-  borderRadius: 8, padding: '9px 12px', color: color.textPrimary, fontSize: 13, outline: 'none',
-  fontFamily: font.body,
+const fieldWrapStyle = { border: `1px solid ${color.border}`, borderRadius: 9, background: color.bg, transition: 'border-color .16s ease, box-shadow .16s ease' }
+const inputStyle = { width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', color: color.textPrimary, fontFamily: font.body, fontSize: 13.5, padding: '10px 12px' }
+const labelStyle = { fontFamily: font.mono, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: color.textFainter, marginBottom: 6 }
+const STATUS_OPTIONS = ['Active', 'Prospect', 'Review due']
+
+function parseMoney(v) {
+  const n = Number(String(v).replace(/[£,\s]/g, ''))
+  return Number.isFinite(n) && v.trim() !== '' ? n : null
 }
-const labelStyle = { display: 'block', marginBottom: 6, fontSize: 11.5, color: color.textFaint }
 
 export default function AddClientModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ client_name: '', email: '', phone: '', segment: '', portfolio_value: '' })
+  const [form, setForm] = useState({ name: '', objective: '', risk: '', portfolio: '', review: '', status: 'Active' })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const canSave = form.name.trim().length > 0
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSave = async () => {
+    if (!canSave || saving) return
     setError('')
     setSaving(true)
     try {
       const client = await createClient({
-        client_name: form.client_name,
-        email: form.email || null,
-        phone: form.phone || null,
-        segment: form.segment || null,
-        portfolio_value: form.portfolio_value ? Number(form.portfolio_value) : null,
+        client_name: form.name.trim(),
+        portfolio_value: parseMoney(form.portfolio),
+      })
+      saveClientMeta(client.id, {
+        objective: form.objective.trim() || null,
+        risk: form.risk.trim() || null,
+        next_review: form.review.trim() || null,
+        status: form.status,
       })
       onCreated(client)
     } catch (err) {
@@ -38,49 +46,72 @@ export default function AddClientModal({ onClose, onCreated }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(9,10,12,0.72)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pfx-fade 0.2s ease' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(9,10,12,0.72)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pfx-fade 0.2s ease', padding: 24 }}>
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 440, maxWidth: 'calc(100vw - 40px)', background: 'linear-gradient(160deg,#181b1f,#131518)', border: `1px solid ${color.border}`, borderRadius: 16, padding: 28, boxShadow: '0 40px 90px -30px rgba(0,0,0,0.85)', animation: 'pfx-pop 0.28s cubic-bezier(.2,.7,.2,1)' }}
+        style={{ width: 520, maxWidth: '100%', maxHeight: 'calc(100vh - 48px)', overflow: 'auto', background: 'linear-gradient(160deg,#181b1f,#131518)', border: `1px solid ${color.border}`, borderRadius: 16, boxShadow: '0 40px 90px -30px rgba(0,0,0,0.85)', animation: 'pfx-pop 0.3s cubic-bezier(.2,.8,.2,1)' }}
       >
-        <h3 style={{ fontFamily: font.display, fontSize: 17, fontWeight: 600, color: color.textPrimary, margin: 0 }}>Add new client</h3>
-        <form onSubmit={handleSubmit} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '22px 24px', borderBottom: `1px solid ${color.borderSubtle}` }}>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: color.amberSoftBg, border: `1px solid ${color.amberSoftBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 16, fontWeight: 700, color: color.amber, flex: '0 0 auto' }}>+</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: font.display, fontSize: 17, fontWeight: 600, color: color.textPrimary }}>Add client</div>
+            <div style={{ fontSize: 12, color: color.textFaint, marginTop: 2 }}>A reference is assigned automatically. You can complete the fact-find later.</div>
+          </div>
+          <div className="pfx-btn pfx-btn-ghost" onClick={onClose} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: color.textSecondary2, border: `1px solid ${color.borderRaised}`, borderRadius: 9, background: color.raised, cursor: 'pointer', flex: '0 0 auto' }}>✕</div>
+        </div>
+
+        <div style={{ padding: '22px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 18px' }}>
+          <div style={{ gridColumn: 'span 2' }}>
+            <div style={labelStyle}>Full name</div>
+            <div className="pfx-field" style={fieldWrapStyle}><input value={form.name} onChange={set('name')} placeholder="e.g. Eleanor Whitfield" style={inputStyle} /></div>
+          </div>
           <div>
-            <label style={labelStyle}>Client name *</label>
-            <input required value={form.client_name} onChange={update('client_name')} style={inputStyle} />
+            <div style={labelStyle}>Objective</div>
+            <div className="pfx-field" style={fieldWrapStyle}><input value={form.objective} onChange={set('objective')} placeholder="e.g. Retirement income" style={inputStyle} /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input type="email" value={form.email} onChange={update('email')} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Phone</label>
-              <input value={form.phone} onChange={update('phone')} style={inputStyle} />
+          <div>
+            <div style={labelStyle}>Risk profile</div>
+            <div className="pfx-field" style={fieldWrapStyle}><input value={form.risk} onChange={set('risk')} placeholder="e.g. 4 · Balanced" style={inputStyle} /></div>
+          </div>
+          <div>
+            <div style={labelStyle}>Portfolio</div>
+            <div className="pfx-field" style={fieldWrapStyle}><input value={form.portfolio} onChange={set('portfolio')} placeholder="e.g. £250,000" style={{ ...inputStyle, fontFamily: font.mono }} /></div>
+          </div>
+          <div>
+            <div style={labelStyle}>Next review</div>
+            <div className="pfx-field" style={fieldWrapStyle}><input value={form.review} onChange={set('review')} placeholder="e.g. Aug 2026 or —" style={{ ...inputStyle, fontFamily: font.mono }} /></div>
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <div style={labelStyle}>Status</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {STATUS_OPTIONS.map((s) => {
+                const on = form.status === s
+                return (
+                  <div
+                    key={s}
+                    className="pfx-chip"
+                    onClick={() => setForm((f) => ({ ...f, status: s }))}
+                    style={{ fontSize: 12, borderRadius: 20, padding: '7px 14px', border: `1px solid ${on ? color.teal : color.borderRaised}`, background: on ? '#1b2422' : 'transparent', color: on ? color.textSecondary : color.textMuted, cursor: 'pointer' }}
+                  >
+                    {s}
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Segment</label>
-              <input value={form.segment} onChange={update('segment')} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Portfolio value</label>
-              <input type="number" value={form.portfolio_value} onChange={update('portfolio_value')} style={{ ...inputStyle, fontFamily: font.mono }} />
-            </div>
-          </div>
+          {error && <p style={{ gridColumn: 'span 2', fontSize: 12.5, color: '#e08787', margin: 0 }}>{error}</p>}
+        </div>
 
-          {error && <p style={{ fontSize: 12.5, color: '#e08787', margin: 0 }}>{error}</p>}
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-            <div className="pfx-btn pfx-btn-ghost" onClick={onClose} style={{ flex: 1, fontSize: 13, fontWeight: 500, color: color.textSecondary2, border: `1px solid ${color.borderRaised}`, borderRadius: 9, padding: '11px 0', textAlign: 'center', background: color.raised, cursor: 'pointer' }}>
-              Cancel
-            </div>
-            <button type="submit" disabled={saving} className="pfx-btn pfx-btn-amber" style={{ flex: 1.3, fontSize: 13, fontWeight: 600, color: color.ink, background: color.amber, border: 'none', borderRadius: 9, padding: '11px 0', textAlign: 'center', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Creating…' : 'Create client'}
-            </button>
+        <div style={{ padding: '16px 24px', borderTop: `1px solid ${color.borderSubtle}`, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <div className="pfx-btn pfx-btn-ghost" onClick={onClose} style={{ fontSize: 13, fontWeight: 500, color: color.textSecondary2, border: `1px solid ${color.borderRaised}`, borderRadius: 9, padding: '10px 18px', background: color.raised, cursor: 'pointer' }}>Cancel</div>
+          <div
+            className="pfx-btn pfx-btn-amber"
+            onClick={handleSave}
+            style={{ fontSize: 13, fontWeight: 600, color: color.ink, background: color.amber, borderRadius: 9, padding: '10px 20px', cursor: canSave && !saving ? 'pointer' : 'default', opacity: canSave && !saving ? 1 : 0.5 }}
+          >
+            {saving ? 'Creating…' : 'Add client'}
           </div>
-        </form>
+        </div>
       </div>
     </div>
   )

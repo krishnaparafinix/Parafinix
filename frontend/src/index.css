@@ -47,6 +47,12 @@ a:hover {
 @keyframes pfx-newrow { from{opacity:0;background:rgba(199,137,63,0.14);} to{opacity:1;background:transparent;} }
 @keyframes pfx-slidein { from{ transform: translateX(100%);} to{ transform: translateX(0);} }
 @keyframes pfx-sheen { 0%{ background-position: -140% 0;} 100%{ background-position: 240% 0;} }
+@keyframes pfx-fadeup { from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:translateY(0);} }
+@keyframes pfx-linetravel { 0%{ transform:translateX(-100%);} 100%{ transform:translateX(340%);} }
+@keyframes pfx-drift { 0%,100%{ transform:translate(0,0);} 50%{ transform:translate(0,-14px);} }
+
+.pfx-field:focus-within { border-color:#5fd0c4 !important; box-shadow:0 0 0 3px rgba(95,208,196,0.12); }
+.pfx-link:hover { color:#7fe0d5; }
 
 .pfx-logo:hover .pfx-w1 { animation: pfx-wing-a 0.9s ease-in-out infinite; }
 .pfx-logo:hover .pfx-w3 { animation: pfx-wing-b 0.9s ease-in-out infinite; }

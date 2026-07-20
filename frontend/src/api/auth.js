@@ -15,3 +15,7 @@ export function getMe() {
 export function logout() {
   return api.post('/auth/logout').then((r) => r.data)
 }
+
+export function forgotPassword(email) {
+  return api.post('/auth/forgot-password', { email }).then((r) => r.data)
+}
